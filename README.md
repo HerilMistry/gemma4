@@ -1,14 +1,10 @@
-# 🛡️ Sanctuary 3.0
+# Sanctuary
 
 Sanctuary is a privacy-first, offline-capable Socratic CBT (Cognitive Behavioral Therapy) reasoning engine. It uses a local Gemma-based model to help users reframe cognitive distortions without any data leaving their device.
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Model Setup
-Place your `.gguf` model file in the following directory:
-`backend/models/sanctuary_cbt_final.gguf`
-
-### 2. Start Backend
+### 1. Start Backend
 ```bash
 # Navigate to backend
 cd backend
@@ -19,7 +15,7 @@ python server.py
 ```
 *Backend runs on: http://localhost:8000*
 
-### 3. Start Frontend
+### 2. Start Frontend
 ```bash
 # Navigate to frontend
 cd frontend
@@ -30,12 +26,12 @@ npm run dev
 ```
 *Frontend runs on: http://localhost:3000*
 
-## 🧠 Key Features
+## Key Features
 - **Zero Telemetry**: 100% local processing; no data is sent to external servers.
 - **Direct Inference**: Powered by `llama-cpp-python` for high-speed CPU inference.
 - **Clinical RAG**: Grounded in therapeutic protocols via `ChromaDB`.
 - **Safety First**: Integrated crisis detection and resource routing.
 - **Secure Vault**: AES-256 GCM encryption for local journal storage.
 
-## ⚖️ License
+## License
 MIT
