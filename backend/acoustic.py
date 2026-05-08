@@ -10,10 +10,10 @@ def extract_acoustic_features(audio_path):
 
     avg_pitch = np.mean(pitch_values) if len(pitch_values) > 0 else 0
 
-    rms = librosa.feature.rms(y)
+    rms = librosa.feature.rms(y=y)
     energy = float(np.mean(rms))
 
-    zcr = librosa.feature.zero_crossing_rate(y)
+    zcr = librosa.feature.zero_crossing_rate(y=y)
 
     speech_rate = float(np.mean(zcr))
 

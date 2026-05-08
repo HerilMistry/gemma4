@@ -1,2 +1,25 @@
-venv
-venv/
+# Python
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Sanctuary data (secrets + user data)
+*.db
+*.bin
+backend/data/
+backend/uploads/
+backend/models/*.gguf
+
+# Frontend
+.next/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

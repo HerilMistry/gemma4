@@ -1,7 +1,26 @@
-flask
-flask-cors
-librosa
-numpy
-soundfile
-nltk
-requests
+# Sanctuary 3.0 — Pinned Dependencies
+# Install: pip install -r requirements.txt
+
+# --- API Server ---
+fastapi==0.115.0
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+
+# --- LLM Engine (in-process GGUF inference) ---
+llama-cpp-python==0.3.8
+
+# --- RAG Engine (real vector search) ---
+chromadb==0.6.3
+sentence-transformers==3.4.1
+
+# --- Security ---
+cryptography==44.0.0
+
+# --- Audio Processing ---
+librosa==0.10.2
+soundfile==0.12.1
+openai-whisper==20240930
+
+# --- Core ---
+numpy<2.0
+pandas==2.2.3
