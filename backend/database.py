@@ -66,6 +66,18 @@ class SecureVault:
                     ciphertext BLOB NOT NULL
                 )
             """)
+            # Feedback table: stores user ratings/feedback for responses
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    log_id INTEGER,
+                    timestamp TEXT NOT NULL,
+                    rating INTEGER,
+                    feedback_text TEXT,
+                    nonce BLOB NOT NULL,
+                    ciphertext BLOB NOT NULL
+                )
+            """)
         self._initialized = True
         logger.info("SecureVault initialized (DB: %s)", Config.DB_PATH)
 
@@ -104,5 +116,59 @@ class SecureVault:
                 })
             except Exception as e:
                 logger.error("Failed to decrypt record %d: %s", row_id, e)
+
+        return decrypted
+
+    def store_feedback(self, log_id: int | None, rating: int | None = None, feedback_text: str | None = None) -> None:
+        """
+        Store user feedback for a response (encrypted).
+
+        Args:
+            log_id: Optional reference to the original encrypted_logs entry.
+            rating: Optional numeric rating (1-5, or custom scale).
+            feedback_text: Optional text feedback.
+        """
+        self._ensure_init()
+
+        feedback_data = {
+            "log_id": log_id,
+            "rating": rating,
+            "feedback_text": feedback_text,
+        }
+
+        plaintext = json.dumps(feedback_data).encode("utf-8")
+        nonce = os.urandom(12)
+        ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
+
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO feedback (log_id, timestamp, rating, feedback_text, nonce, ciphertext) VALUES (?, ?, ?, ?, ?, ?)",
+                (log_id, datetime.now().isoformat(), rating, feedback_text, nonce, ciphertext),
+            )
+        logger.debug("Stored feedback for log_id %s (rating: %s)", log_id, rating)
+
+    def retrieve_and_decrypt_feedback(self) -> list[dict]:
+        """Retrieve and decrypt all stored feedback entries."""
+        self._ensure_init()
+
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT id, log_id, timestamp, rating, feedback_text, nonce, ciphertext FROM feedback"
+            ).fetchall()
+
+        decrypted = []
+        for row_id, log_id, timestamp, rating, feedback_text, nonce, ciphertext in rows:
+            try:
+                plaintext = self._aesgcm.decrypt(nonce, ciphertext, None)
+                decrypted.append({
+                    "id": row_id,
+                    "log_id": log_id,
+                    "timestamp": timestamp,
+                    "rating": rating,
+                    "feedback_text": feedback_text,
+                    "data": json.loads(plaintext.decode("utf-8")),
+                })
+            except Exception as e:
+                logger.error("Failed to decrypt feedback record %d: %s", row_id, e)
 
         return decrypted

@@ -8,6 +8,8 @@ Replaces the old Flask app.py with:
 - Async file handling with tempfile (no leaked uploads)
 - Auto-generated API docs at /docs
 - Health check endpoint
+- Multilingual support (text + speech)
+- User feedback collection
 """
 
 import json
@@ -87,7 +89,21 @@ class HealthResponse(BaseModel):
 class AnalyzeResponse(BaseModel):
     response: str
     route_used: str
+    language: str | None = None  # Detected language code
+    language_name: str | None = None  # Language name (e.g., "spanish")
+    translated: bool = False  # Whether translation was performed
     telemetry: str = "Encrypted via AES-256 GCM"
+
+
+class FeedbackRequest(BaseModel):
+    log_id: int | None = None  # Reference to the original analysis log
+    rating: int | None = None  # Numeric rating (1-5, etc.)
+    feedback_text: str | None = None  # Free-form feedback
+
+
+class FeedbackResponse(BaseModel):
+    status: str
+    message: str
 
 
 # --- Endpoints ---
@@ -102,13 +118,17 @@ async def analyze(
     text: str = Form(""),
     typing: str = Form("{}"),
     audio: UploadFile | None = File(None),
+    language: str | None = Form(None),  # Optional: user-specified language code
 ):
     """
     Main analysis endpoint. Accepts multimodal input:
     - text: The user's journal entry
     - typing: JSON string with avg_interval in ms
     - audio: Optional WAV file for transcription + acoustic analysis
+    - language: Optional ISO 639-1 language code for Whisper (e.g., 'en', 'es', 'fr')
     """
+    from lang_utils import detect_language, translate_text, should_translate_for_llm, get_whisper_language
+    
     # 1. Parse typing features
     try:
         typing_features = json.loads(typing)
@@ -116,8 +136,16 @@ async def analyze(
         typing_features = {}
 
     audio_features = None
+    detected_language = None
+    was_translated = False
+    language_name = None
 
-    # 2. Process audio (if provided)
+    # 2. Detect language from text input
+    if text.strip():
+        detected_language, _ = detect_language(text)
+        logger.info("Detected text language: %s", detected_language)
+    
+    # 3. Process audio (if provided)
     if audio and audio.filename:
         from audio_processing import transcribe_audio
         from acoustic import extract_acoustic_features
@@ -130,9 +158,20 @@ async def analyze(
             tmp_path = tmp.name
 
         try:
-            transcribed_text = transcribe_audio(tmp_path)
+            # Use detected language or user-specified language for Whisper
+            whisper_lang = language or detected_language
+            
+            transcription_result = transcribe_audio(tmp_path, language=whisper_lang)
+            transcribed_text = transcription_result.get("text", "")
+            audio_detected_language = transcription_result.get("language")
+            
             if transcribed_text:
                 text = f"{text} {transcribed_text}".strip()
+                # Update detected_language from audio if more reliable
+                if audio_detected_language:
+                    detected_language = audio_detected_language
+                    logger.info("Updated language from audio: %s", detected_language)
+            
             audio_features = extract_acoustic_features(tmp_path)
         except Exception as e:
             logger.error("Audio processing failed: %s", e)
@@ -141,25 +180,43 @@ async def analyze(
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
-    # 3. Validate we have something to analyze
+    # 4. Validate we have something to analyze
     if not text.strip():
         return AnalyzeResponse(
             response="Please share what's on your mind. I'm here to listen.",
             route_used="none",
+            language=detected_language,
         )
 
-    # 4. RAG: Retrieve clinical grounding context
+    # 5. Optional: Translate text if LLM doesn't support the detected language
+    original_text = text
+    if detected_language and should_translate_for_llm(detected_language):
+        logger.info("Translating from %s to English for LLM processing", detected_language)
+        translated_text, translation_success = translate_text(text, detected_language, "en")
+        if translation_success:
+            text = translated_text
+            was_translated = True
+            logger.info("Translation successful")
+        else:
+            logger.warning("Translation failed; using original text")
+
+    # 6. Retrieve language name for response
+    if detected_language:
+        from lang_utils import WHISPER_LANGUAGE_MAP
+        language_name = WHISPER_LANGUAGE_MAP.get(detected_language, "unknown")
+
+    # 7. RAG: Retrieve clinical grounding context
     from rag_engine import retrieve_context
     clinical_context = retrieve_context(text)
 
-    # 5. Router: Determine analysis depth
+    # 8. Router: Determine analysis depth
     from router import CactusEdgeRouter
     route = CactusEdgeRouter.route_task(text, audio_features, typing_features)
 
-    # 6. Build the Gemma prompt with clinical grounding
+    # 9. Build the Gemma prompt with clinical grounding
     prompt = _build_prompt(text, clinical_context, typing_features, audio_features, route)
 
-    # 7. Generate LLM response
+    # 10. Generate LLM response
     from llm_engine import generate_response
     try:
         if _is_crisis(text):
@@ -178,19 +235,32 @@ async def analyze(
             "processing your thoughts right now. Could you try sharing again?"
         )
 
-    # 8. Encrypt and store (zero telemetry)
+    # 11. Encrypt and store (zero telemetry) with language metadata
+    log_entry_id = None
     try:
-        vault.encrypt_and_store({
-            "text": text,
+        # Store data and track the log ID for feedback reference
+        vault_data = {
+            "original_text": original_text,
+            "processed_text": text,
+            "detected_language": detected_language,
+            "was_translated": was_translated,
             "audio_features": audio_features,
             "typing_features": typing_features,
             "route": route,
             "response": llm_response,
-        })
+        }
+        vault.encrypt_and_store(vault_data)
+        logger.info("Vault entry stored with language: %s, translated: %s", detected_language, was_translated)
     except Exception as e:
         logger.error("Vault encryption failed: %s", e)
 
-    return AnalyzeResponse(response=llm_response, route_used=route)
+    return AnalyzeResponse(
+        response=llm_response,
+        route_used=route,
+        language=detected_language,
+        language_name=language_name,
+        translated=was_translated,
+    )
 
 
 FEW_SHOT_EXAMPLES = """<start_of_turn>user
@@ -258,6 +328,49 @@ def _build_prompt(
     return prompt
 
 
+# --- Feedback Endpoint ---
+@app.post("/feedback", response_model=FeedbackResponse)
+async def submit_feedback(feedback: FeedbackRequest):
+    """
+    Store user feedback on a previous response.
+    
+    This endpoint allows users to provide ratings and comments,
+    which are encrypted and stored for analytics and future RL improvements.
+    
+    Args:
+        feedback: FeedbackRequest with optional log_id, rating, feedback_text.
+    
+    Returns:
+        FeedbackResponse confirming storage.
+    """
+    if not Config.ENABLE_USER_FEEDBACK:
+        return FeedbackResponse(
+            status="disabled",
+            message="Feedback collection is currently disabled.",
+        )
+
+    try:
+        vault.store_feedback(
+            log_id=feedback.log_id,
+            rating=feedback.rating,
+            feedback_text=feedback.feedback_text,
+        )
+        logger.info(
+            "Feedback stored: log_id=%s, rating=%s, text_len=%s",
+            feedback.log_id,
+            feedback.rating,
+            len(feedback.feedback_text or "") if feedback.feedback_text else 0,
+        )
+        return FeedbackResponse(
+            status="success",
+            message="Thank you for your feedback. Your input helps us improve.",
+        )
+    except Exception as e:
+        logger.error("Failed to store feedback: %s", e)
+        return FeedbackResponse(
+            status="error",
+            message="We encountered an issue storing your feedback. Please try again later.",
+        )
 
 
 # --- Entry point ---

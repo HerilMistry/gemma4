@@ -48,3 +48,13 @@ class Config:
     TEXT_COMPLEXITY_WORD_COUNT = int(
         os.getenv("SANCTUARY_COMPLEXITY_WORDS", "20")
     )
+
+    # --- Multilingual Support ---
+    LLM_MULTILINGUAL_SUPPORT = os.getenv("SANCTUARY_LLM_MULTILINGUAL", "false").lower() == "true"
+    TRANSLATION_SERVICE = os.getenv("SANCTUARY_TRANSLATION_SERVICE", "disabled")
+    # Options: "disabled" (no translation), "local" (M2M100 model, heavy), "cloud" (not implemented yet)
+    WHISPER_LANGUAGE_AUTO_DETECT = os.getenv("SANCTUARY_WHISPER_AUTO_LANG", "true").lower() == "true"
+
+    # --- Feedback & Analytics ---
+    ENABLE_USER_FEEDBACK = os.getenv("SANCTUARY_ENABLE_FEEDBACK", "true").lower() == "true"
+    FEEDBACK_STORAGE = os.getenv("SANCTUARY_FEEDBACK_STORAGE", "vault")  # "vault" or "separate_db"

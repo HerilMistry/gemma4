@@ -18,14 +18,45 @@ def get_whisper_model():
             print(f"Error loading whisper: {e}")
     return model
 
-def transcribe_audio(audio_path):
-    """Transcribes audio file to text using local Whisper model."""
+def transcribe_audio(audio_path, language: str | None = None):
+    """
+    Transcribes audio file to text using local Whisper model.
+    
+    Args:
+        audio_path: Path to the audio file.
+        language: Optional ISO 639-1 language code (e.g., 'en', 'es', 'fr').
+                 If None, Whisper will auto-detect the language.
+    
+    Returns:
+        Dict with keys:
+        - 'text': Transcribed text
+        - 'language': Detected language code (if available)
+        - 'confidence': Language detection confidence (if available)
+    """
     if not os.path.exists(audio_path):
-        return ""
+        return {"text": "", "language": None, "confidence": None}
         
     whisper_model = get_whisper_model()
     if whisper_model is None:
-        return "[Error: Whisper model not loaded]"
+        return {"text": "[Error: Whisper model not loaded]", "language": None, "confidence": None}
+    
+    try:
+        # Build transcribe kwargs
+        transcribe_kwargs = {"audio_path": audio_path}
         
-    result = whisper_model.transcribe(audio_path)
-    return result["text"]
+        if language:
+            # Map ISO 639-1 to Whisper language names if needed
+            # Whisper accepts both codes and names; ISO 639-1 codes work directly
+            transcribe_kwargs["language"] = language
+        
+        result = whisper_model.transcribe(**transcribe_kwargs)
+        
+        return {
+            "text": result.get("text", ""),
+            "language": result.get("language"),
+            "confidence": None,  # Whisper doesn't expose confidence directly
+        }
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
+        return {"text": f"[Transcription error: {str(e)}]", "language": None, "confidence": None}
+
