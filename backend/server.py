@@ -76,7 +76,10 @@ app.add_middleware(
 
 # Lazy-init the vault (no side effects until first use)
 from database import SecureVault
+from reframer import Reframer
+
 vault = SecureVault()
+reframer = Reframer()
 
 
 # --- Response Models ---
@@ -92,6 +95,7 @@ class AnalyzeResponse(BaseModel):
     language: str | None = None  # Detected language code
     language_name: str | None = None  # Language name (e.g., "spanish")
     translated: bool = False  # Whether translation was performed
+    distortions: list[dict] | None = None  # Detected cognitive distortions
     telemetry: str = "Encrypted via AES-256 GCM"
 
 
@@ -205,16 +209,21 @@ async def analyze(
         from lang_utils import WHISPER_LANGUAGE_MAP
         language_name = WHISPER_LANGUAGE_MAP.get(detected_language, "unknown")
 
-    # 7. RAG: Retrieve clinical grounding context
+    # 7. Reframer: Detect cognitive distortions for positive reframing
+    detected_distortions = reframer.detect_distortions(text)
+    reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
+    logger.info("Detected distortions: %s", [d["name"] for d in detected_distortions])
+
+    # 8. Retrieve clinical grounding context
     from rag_engine import retrieve_context
     clinical_context = retrieve_context(text)
 
-    # 8. Router: Determine analysis depth
+    # 9. Router: Determine analysis depth
     from router import CactusEdgeRouter
     route = CactusEdgeRouter.route_task(text, audio_features, typing_features)
 
-    # 9. Build the Gemma prompt with clinical grounding
-    prompt = _build_prompt(text, clinical_context, typing_features, audio_features, route)
+    # 10. Build the Gemma prompt with clinical grounding and reframing guidance
+    prompt = _build_prompt(text, clinical_context, typing_features, audio_features, route, reframing_instructions)
 
     # 10. Generate LLM response
     from llm_engine import generate_response
@@ -247,6 +256,7 @@ async def analyze(
             "audio_features": audio_features,
             "typing_features": typing_features,
             "route": route,
+            "distortions": detected_distortions,
             "response": llm_response,
         }
         vault.encrypt_and_store(vault_data)
@@ -260,6 +270,7 @@ async def analyze(
         language=detected_language,
         language_name=language_name,
         translated=was_translated,
+        distortions=detected_distortions,
     )
 
 
@@ -295,22 +306,20 @@ def _is_severe(text: str, typing_features: dict) -> bool:
     
     return keyword_match or high_stress_typing
 
-def _build_prompt(
-    text: str,
-    clinical_context: str,
     typing_features: dict,
     audio_features: dict | None,
     route: str,
+    reframing_instructions: str,
 ) -> str:
     """
     Build the full prompt string using proper multi-turn formatting.
     """
-    # 1. System Instruction (Universal Persona)
     prompt = (
         "<start_of_turn>user\n"
         "You are Sanctuary, a Socratic CBT reasoning engine. Your role is to identify "
         "cognitive distortions and ask gentle, empathetic questions to help the user reframe. "
-        "Never lecture; always guide. Respond in 2-3 sentences.<end_of_turn>\n"
+        "Never lecture; always guide. Respond in 2-3 sentences.\n\n"
+        f"Specific Strategy: {reframing_instructions}<end_of_turn>\n"
     )
     
     # 2. History Primes (Properly tagged)

@@ -3,7 +3,7 @@ env/
 __pycache__/
 *.pyc
 *.pyo
-
+venv/
 # Sanctuary data (secrets + user data)
 *.db
 *.bin

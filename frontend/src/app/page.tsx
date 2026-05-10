@@ -9,7 +9,11 @@ export default function SanctuaryJournal() {
   const [isRecording, setIsRecording] = useState(false);
   const [typingCadence, setTypingCadence] = useState<number[]>([]);
   const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number | null>(null);
-  const [messages, setMessages] = useState<Array<{role: 'user' | 'sanctuary', text: string}>>([]);
+  const [messages, setMessages] = useState<Array<{
+    role: 'user' | 'sanctuary', 
+    text: string, 
+    distortions?: Array<{name: string, description: string}>
+  }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -103,7 +107,11 @@ export default function SanctuaryJournal() {
 
       const data = await res.json();
       // 2. Append Sanctuary response to history
-      setMessages(prev => [...prev, { role: 'sanctuary', text: data.response }]);
+      setMessages(prev => [...prev, { 
+        role: 'sanctuary', 
+        text: data.response,
+        distortions: data.distortions
+      }]);
       setTypingCadence([]);
       setLastKeystrokeTime(null);
       audioChunksRef.current = [];
@@ -229,6 +237,30 @@ export default function SanctuaryJournal() {
                       {msg.role === 'user' ? 'Your Thought' : 'Sanctuary Reframe'}
                     </h3>
                     <p className="text-white leading-relaxed">{msg.text}</p>
+                    
+                    {msg.role === 'sanctuary' && msg.distortions && msg.distortions.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-brand-700/30">
+                        <div className="text-[10px] text-text-secondary uppercase tracking-widest mb-2 font-semibold">Distortions Identified</div>
+                        <div className="flex flex-wrap gap-2">
+                          {msg.distortions.map((d, i) => (
+                            <motion.div 
+                              key={i}
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: i * 0.1 }}
+                              className="group relative"
+                            >
+                              <div className="px-2 py-1 rounded bg-accent-primary/10 border border-accent-primary/30 text-accent-primary text-[10px] font-bold uppercase tracking-tighter cursor-help">
+                                {d.name.replace('_', ' ')}
+                              </div>
+                              <div className="absolute bottom-full left-0 mb-2 w-48 p-2 bg-brand-800 border border-brand-700 rounded-lg text-[10px] text-text-primary opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
+                                {d.description}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
