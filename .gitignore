@@ -1,25 +1,39 @@
-# Python
+# Environment
 env/
+venv/
+.env
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-venv/
-# Sanctuary data (secrets + user data)
-*.db
-*.bin
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sanctuary Core Data (NEVER COMMIT)
 backend/data/
 backend/uploads/
 backend/models/*.gguf
+*.db
+*.bin
+
+# AI/ML & Federated Learning
+backend/federated_sync/
+backend/lora_updates/
+backend/dpo_outputs/
+backend/outputs/
+*.log
 
 # Frontend
 .next/
 node_modules/
+.vercel/
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
 *.swp
-
-# OS
 .DS_Store
-Thumbs.dbvenv/
+Thumbs.db
