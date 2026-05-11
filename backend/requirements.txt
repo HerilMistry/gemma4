@@ -24,7 +24,8 @@ openai-whisper==20250625
 # --- Multilingual & Language Detection ---
 langdetect==1.0.9
 
-# --- Core ---
+sqlalchemy==2.0.34
 numpy<2.0
 pandas==2.2.3
 psutil==6.1.1
+alembic==1.13.2

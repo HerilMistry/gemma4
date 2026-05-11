@@ -59,32 +59,40 @@ class SecureVault:
         os.makedirs(os.path.dirname(Config.DB_PATH), exist_ok=True)
         # Run migrations (creates tables and tracks schema version)
         try:
-            from migrations import get_default_migration_manager
-
-            mgr = get_default_migration_manager()
-            mgr.run_migrations()
-        except Exception:
-            # Fallback: attempt to create tables if migrations unavailable
-            with sqlite3.connect(Config.DB_PATH) as conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS encrypted_logs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        nonce BLOB NOT NULL,
-                        ciphertext BLOB NOT NULL
-                    )
-                """)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS feedback (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        log_id INTEGER,
-                        timestamp TEXT NOT NULL,
-                        rating INTEGER,
-                        feedback_text TEXT,
-                        nonce BLOB NOT NULL,
-                        ciphertext BLOB NOT NULL
-                    )
-                """)
+            # Attempt to run Alembic migrations
+            from alembic import command as alembic_command
+            from alembic.config import Config as AlembicConfig
+            alembic_cfg = AlembicConfig("alembic.ini")
+            # Upgrade to head (apply all migrations)
+            alembic_command.upgrade(alembic_cfg, "head")
+        except Exception as e:
+            logger.warning("Alembic migration failed (%s); falling back to custom manager", e)
+            try:
+                from migrations import get_default_migration_manager
+                mgr = get_default_migration_manager()
+                mgr.run_migrations()
+            except Exception:
+                # Fallback: attempt to create tables if migrations unavailable
+                with sqlite3.connect(Config.DB_PATH) as conn:
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS encrypted_logs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp TEXT NOT NULL,
+                            nonce BLOB NOT NULL,
+                            ciphertext BLOB NOT NULL
+                        )
+                    """)
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS feedback (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            log_id INTEGER,
+                            timestamp TEXT NOT NULL,
+                            rating INTEGER,
+                            feedback_text TEXT,
+                            nonce BLOB NOT NULL,
+                            ciphertext BLOB NOT NULL
+                        )
+                    """)
         self._initialized = True
         logger.info("SecureVault initialized (DB: %s)", Config.DB_PATH)
 
