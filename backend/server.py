@@ -33,13 +33,20 @@ from core.constants import (
 )
 from core.crisis import is_crisis, is_severe
 from reframer import Reframer
+from core.sanitizer import PIISanitizer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(name)-20s | %(levelname)-7s | %(message)s",
-)
-logger = logging.getLogger("sanctuary")
+    # Pre-load VAD
+    from vad import SileroVAD
+    try:
+        vad = SileroVAD()
+        if vad._init_session():
+            logger.info("Silero VAD initialized successfully.")
+        else:
+            logger.warning("Silero VAD model missing. Run: curl -L https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx -o backend/models/silero_vad.onnx")
+    except Exception as e:
+        logger.error("VAD initialization failed: %s", e)
+
+    logger.info("=== Sanctuary 3.2 Ready ===")
 
 
 # --- Lifespan: Pre-load heavy models on startup ---
@@ -176,6 +183,12 @@ async def analyze(
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
+    # --- Premium Feature: PII Sanitization & Biometric Anonymization ---
+    text = PIISanitizer.sanitize(text)
+    typing_features = PIISanitizer.sanitize_biometrics(typing_features)
+    if audio_features:
+        audio_features = PIISanitizer.sanitize_biometrics(audio_features)
+
     # 4. Input validation
     if not text.strip():
         return AnalyzeResponse(
@@ -304,6 +317,10 @@ async def analyze_stream(
         finally:
             if os.path.exists(tmp_path): os.unlink(tmp_path)
 
+    # --- Premium Feature: PII Sanitization & Biometric Anonymization ---
+    text = PIISanitizer.sanitize(text)
+    typing_features = PIISanitizer.sanitize_biometrics(typing_features)
+
     # Validation & Crisis Gate
     if not text.strip():
         return {"response": EMPTY_INPUT_RESPONSE}
@@ -341,14 +358,15 @@ async def analyze_stream(
             yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
             await anyio.sleep(0.01)
 
-        # Final storage packet
+        # Final storage packet (Sanitized)
         vault_data = {
             "original_text": text,
             "detected_language": detected_language,
             "route": route,
             "distortions": detected_distortions,
             "response": full_response,
-            "streamed": True
+            "streamed": True,
+            "telemetry_anonymized": True
         }
         await anyio.to_thread.run_sync(vault.encrypt_and_store, vault_data)
         yield "data: [DONE]\n\n"

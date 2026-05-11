@@ -22,6 +22,41 @@ export default function SanctuaryJournal() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // --- Premium Feature: IndexedDB Persistence ---
+  useEffect(() => {
+    const initDB = async () => {
+      const request = indexedDB.open('SanctuaryVault', 1);
+      request.onupgradeneeded = (e: any) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('drafts')) {
+          db.createObjectStore('drafts');
+        }
+      };
+      request.onsuccess = (e: any) => {
+        const db = e.target.result;
+        const tx = db.transaction('drafts', 'readonly');
+        const store = tx.objectStore('drafts');
+        const getReq = store.get('current_draft');
+        getReq.onsuccess = () => {
+          if (getReq.result && text === '') setText(getReq.result);
+        };
+      };
+    };
+    initDB();
+  }, []);
+
+  // Save draft whenever text changes
+  useEffect(() => {
+    if (!text) return;
+    const request = indexedDB.open('SanctuaryVault', 1);
+    request.onsuccess = (e: any) => {
+      const db = e.target.result;
+      const tx = db.transaction('drafts', 'readwrite');
+      const store = tx.objectStore('drafts');
+      store.put(text, 'current_draft');
+    };
+  }, [text]);
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
@@ -52,7 +87,6 @@ export default function SanctuaryJournal() {
 
       mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        // Handle audio blob sending here
         console.log("Audio recorded", audioBlob);
       };
 
@@ -67,9 +101,18 @@ export default function SanctuaryJournal() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      // Stop all tracks
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
     }
+  };
+
+  const clearDraft = () => {
+    const request = indexedDB.open('SanctuaryVault', 1);
+    request.onsuccess = (e: any) => {
+      const db = e.target.result;
+      const tx = db.transaction('drafts', 'readwrite');
+      const store = tx.objectStore('drafts');
+      store.delete('current_draft');
+    };
   };
 
   const handleSubmit = async () => {
@@ -80,9 +123,9 @@ export default function SanctuaryJournal() {
       ? typingCadence.reduce((a, b) => a + b, 0) / typingCadence.length 
       : 0;
 
-    // 1. Append user message immediately (Persistent UI)
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setText('');
+    clearDraft(); // Clear persistent draft on success
     setIsLoading(true);
     setError(null);
 
@@ -97,14 +140,12 @@ export default function SanctuaryJournal() {
     }
 
     try {
-      // 2. Call the dedicated SSE streaming endpoint
       const response = await fetch('http://localhost:8000/analyze/stream', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        // Fallback for non-streaming or error responses (e.g., Crisis Gate)
         const data = await response.json();
         setMessages(prev => [...prev, { 
           role: 'sanctuary', 
@@ -114,7 +155,6 @@ export default function SanctuaryJournal() {
         return;
       }
 
-      // 3. Process the ReadableStream (SSE)
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       
@@ -134,14 +174,12 @@ export default function SanctuaryJournal() {
             const data = JSON.parse(line.slice(6));
             
             if (data.type === 'metadata') {
-              // Add a fresh Sanctuary message container with metadata
               setMessages(prev => [...prev, { 
                 role: 'sanctuary', 
                 text: '', 
                 distortions: data.distortions 
               }]);
             } else if (data.type === 'token') {
-              // Update the last Sanctuary message incrementally
               setMessages(prev => {
                 const updated = [...prev];
                 const last = updated[updated.length - 1];
@@ -154,13 +192,10 @@ export default function SanctuaryJournal() {
                 return updated;
               });
             }
-          } catch (e) {
-            // Ignore incomplete JSON chunks occasionally caused by mid-token splits
-          }
+          } catch (e) {}
         }
       }
 
-      // 4. Cleanup
       setTypingCadence([]);
       setLastKeystrokeTime(null);
       audioChunksRef.current = [];
@@ -176,7 +211,6 @@ export default function SanctuaryJournal() {
   return (
     <div className="min-h-screen bg-brand-900 text-text-primary p-6 md:p-12 font-sans selection:bg-accent-primary selection:text-white">
       
-      {/* Header */}
       <header className="flex justify-between items-center mb-12 max-w-4xl mx-auto">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-primary to-accent-secondary flex items-center justify-center shadow-lg shadow-accent-primary/20">
@@ -197,10 +231,8 @@ export default function SanctuaryJournal() {
         </div>
       </header>
 
-      {/* Main Interface */}
       <main className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
         
-        {/* Journaling Column */}
         <div className="md:col-span-2 space-y-6">
           
           <motion.div 
@@ -247,7 +279,6 @@ export default function SanctuaryJournal() {
             </div>
           </motion.div>
 
-          {/* Error Display */}
           {error && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -258,7 +289,6 @@ export default function SanctuaryJournal() {
             </motion.div>
           )}
 
-          {/* Chat History */}
           <div className="space-y-6 pb-4">
             {messages.map((msg, idx) => (
               <motion.div
@@ -285,7 +315,7 @@ export default function SanctuaryJournal() {
                     }`}>
                       {msg.role === 'user' ? 'Your Thought' : 'Sanctuary Reframe'}
                     </h3>
-                    <p className="text-white leading-relaxed">{msg.text}</p>
+                    <p className="text-white leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                     
                     {msg.role === 'sanctuary' && msg.distortions && msg.distortions.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-brand-700/30">
@@ -315,7 +345,6 @@ export default function SanctuaryJournal() {
               </motion.div>
             ))}
             
-            {/* Loading Indicator */}
             {isLoading && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -334,10 +363,8 @@ export default function SanctuaryJournal() {
             <div ref={messagesEndRef} />
           </div>
 
-
         </div>
 
-        {/* Telemetry Column */}
         <div className="space-y-6">
           <motion.div 
             initial={{ opacity: 0, x: 20 }}
@@ -386,14 +413,15 @@ export default function SanctuaryJournal() {
             transition={{ delay: 0.2 }}
             className="glass-panel rounded-2xl p-5 bg-gradient-to-br from-brand-800 to-brand-900 border border-brand-700"
           >
-            <h3 className="text-sm font-medium text-white mb-3">Zero-Telemetry Guarantee</h3>
+            <h3 className="text-sm font-medium text-white mb-3">Premium Privacy Core</h3>
             <p className="text-xs text-text-secondary leading-relaxed mb-3">
-              Your thoughts never leave this device. The Cactus Edge Router intelligently determines whether to process lightweight reframes via local Unsloth weights or execute heavy analysis directly via local Gemma 4 instances.
+              Sanctuary 3.2 includes Silero VAD for precise voice detection and a strict PII Sanitizer that masks sensitive data before processing.
             </p>
             <div className="bg-brand-900 rounded-lg p-3 border border-brand-700 text-xs font-mono text-accent-secondary/80 flex flex-col gap-1">
-            <span>&gt; ChromaDB Vector Store: Online</span>
+            <span>&gt; PII Masking: Active</span>
+            <span>&gt; Silero VAD: Calibrated</span>
+            <span>&gt; IndexedDB Drafts: Persisted</span>
             <span>&gt; AES-256 Vault: Locked</span>
-            <span>&gt; Cactus Edge Router: Standby</span>
             </div>
           </motion.div>
         </div>

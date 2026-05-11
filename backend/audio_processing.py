@@ -3,6 +3,9 @@ import os
 
 from config import Config
 
+from vad import has_speech
+from core.sanitizer import mask_text
+
 # Load the base model locally. 
 # In a real environment, this will download the model weights to ~/.cache/whisper on the first run.
 # 'base' or 'tiny' are good for edge devices.
@@ -21,19 +24,14 @@ def get_whisper_model():
 def transcribe_audio(audio_path, language: str | None = None):
     """
     Transcribes audio file to text using local Whisper model.
-    
-    Args:
-        audio_path: Path to the audio file.
-        language: Optional ISO 639-1 language code (e.g., 'en', 'es', 'fr').
-                 If None, Whisper will auto-detect the language.
-    
-    Returns:
-        Dict with keys:
-        - 'text': Transcribed text
-        - 'language': Detected language code (if available)
-        - 'confidence': Language detection confidence (if available)
+    Pre-filters via Silero VAD to ensure privacy and save compute.
     """
     if not os.path.exists(audio_path):
+        return {"text": "", "language": None, "confidence": None}
+
+    # --- Premium Feature: Silero VAD ---
+    if not has_speech(audio_path):
+        logger.info("VAD: No speech detected in audio. Skipping transcription.")
         return {"text": "", "language": None, "confidence": None}
         
     whisper_model = get_whisper_model()
@@ -41,20 +39,20 @@ def transcribe_audio(audio_path, language: str | None = None):
         return {"text": "[Error: Whisper model not loaded]", "language": None, "confidence": None}
     
     try:
-        # Build transcribe kwargs
-        transcribe_kwargs = {"audio_path": audio_path}
-        
+        transcribe_kwargs = {}
         if language:
-            # Map ISO 639-1 to Whisper language names if needed
-            # Whisper accepts both codes and names; ISO 639-1 codes work directly
             transcribe_kwargs["language"] = language
         
-        result = whisper_model.transcribe(**transcribe_kwargs)
+        result = whisper_model.transcribe(audio_path, **transcribe_kwargs)
+        raw_text = result.get("text", "").strip()
+        
+        # --- Premium Feature: PII Masking ---
+        sanitized_text = mask_text(raw_text)
         
         return {
-            "text": result.get("text", ""),
+            "text": sanitized_text,
             "language": result.get("language"),
-            "confidence": None,  # Whisper doesn't expose confidence directly
+            "confidence": None,
         }
     except Exception as e:
         print(f"Error transcribing audio: {e}")

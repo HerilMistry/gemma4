@@ -20,6 +20,8 @@ cryptography==44.0.0
 librosa==0.10.2
 soundfile==0.12.1
 openai-whisper==20250625
+onnxruntime==1.20.0
+onnx==1.17.0
 
 # --- Multilingual & Language Detection ---
 langdetect==1.0.9
