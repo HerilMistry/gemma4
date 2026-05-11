@@ -27,6 +27,26 @@ class Config:
     N_GPU_LAYERS = int(os.getenv("SANCTUARY_N_GPU_LAYERS", "0"))  # 0 = CPU only
     MAX_TOKENS = int(os.getenv("SANCTUARY_MAX_TOKENS", "512"))
 
+    @staticmethod
+    def get_optimal_threads() -> int:
+        """
+        Calculate optimal thread count for Llama.cpp.
+        Strictly reserves at least 1 physical core for the OS and FastAPI event loop
+        to prevent system lockup and UI lag.
+        """
+        import psutil
+        try:
+            # Get physical cores (excluding logical hyperthreads for better performance)
+            physical_cores = psutil.cpu_count(logical=False) or os.cpu_count() or 4
+            # Reserve 1 core for the system/API, cap at 8 for memory bandwidth efficiency
+            optimal = max(1, min(physical_cores - 1, 8))
+            return optimal
+        except Exception:
+            # Safe fallback: logical cores // 2
+            return max(1, (os.cpu_count() or 4) // 2)
+
+    N_THREADS = int(os.getenv("SANCTUARY_THREADS", str(get_optimal_threads.__func__())))
+
     # --- RAG Engine (ChromaDB + sentence-transformers) ---
     CHROMA_DB_PATH = os.getenv("SANCTUARY_CHROMA_PATH", str(BASE_DIR / "data" / "chroma_db"))
     EMBEDDING_MODEL = os.getenv("SANCTUARY_EMBEDDING_MODEL", "all-MiniLM-L6-v2")

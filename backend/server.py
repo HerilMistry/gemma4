@@ -8,6 +8,7 @@ Senior SDE Hardening (v3.1):
 - Centralized constants and prompts
 - Robust crisis detection
 - Integrated Positive Reframer (v3.1.1)
+- SSE Streaming Support (v3.2)
 """
 
 import json
@@ -18,6 +19,7 @@ import anyio
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -44,13 +46,13 @@ logger = logging.getLogger("sanctuary")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load models into memory once at startup, not on first request."""
-    logger.info("=== Sanctuary 3.1 Starting (Hardened + Reframer) ===")
+    logger.info("=== Sanctuary 3.2 Starting (Streaming + Hardened) ===")
 
-    # Pre-load LLM
-    from llm_engine import get_llm
+    # Pre-load LLM (Modular Provider)
+    from llm_engine import get_inference_orchestrator
     try:
-        get_llm()
-    except FileNotFoundError as e:
+        get_inference_orchestrator()._ensure_model_loaded()
+    except Exception as e:
         logger.warning("LLM not loaded: %s", e)
 
     # Pre-load RAG
@@ -60,16 +62,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("RAG engine failed to initialize: %s", e)
 
-    logger.info("=== Sanctuary 3.1 Ready ===")
+    logger.info("=== Sanctuary 3.2 Ready ===")
     yield
-    logger.info("=== Sanctuary 3.1 Shutting Down ===")
+    logger.info("=== Sanctuary 3.2 Shutting Down ===")
 
 
 # --- App Setup ---
 app = FastAPI(
     title="Sanctuary",
     description="Zero-telemetry CBT reasoning engine powered by Gemma",
-    version="3.1.1",
+    version="3.2.0",
     lifespan=lifespan,
 )
 
@@ -118,7 +120,7 @@ class FeedbackResponse(BaseModel):
 # --- Endpoints ---
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    return HealthResponse(status="ok", engine="llama-cpp-python", version="3.1.1")
+    return HealthResponse(status="ok", engine="llama-cpp-python", version="3.2.0")
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -127,14 +129,15 @@ async def analyze(
     typing: str = Form("{}"),
     audio: UploadFile | None = File(None),
     language: str | None = Form(None),
+    history: str = Form("[]"),
 ):
-    """Main analysis endpoint with multimodal support."""
+    """Main analysis endpoint (Synchronous - Backward Compatible)."""
     from lang_utils import detect_language, translate_text, should_translate_for_llm
     
     # 1. Parse typing features
     try:
         typing_features = json.loads(typing)
-    except (json.JSONDecodeError, TypeError):
+    except:
         typing_features = {}
 
     audio_features = None
@@ -153,8 +156,7 @@ async def analyze(
 
         suffix = os.path.splitext(audio.filename)[1] or ".wav"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            content = await audio.read()
-            tmp.write(content)
+            tmp.write(await audio.read())
             tmp_path = tmp.name
 
         try:
@@ -203,10 +205,9 @@ async def analyze(
             language_name=language_name,
         )
 
-    # 7. Reframer: Detect cognitive distortions for positive reframing
+    # 7. Reframer: Detect cognitive distortions
     detected_distortions = reframer.detect_distortions(text)
     reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
-    logger.info("Detected distortions: %s", [d["name"] for d in detected_distortions])
 
     # 8. RAG & Routing
     from rag_engine import retrieve_context
@@ -216,9 +217,14 @@ async def analyze(
     route = CactusEdgeRouter.route_task(text, audio_features, typing_features)
 
     # 9. Prompt Building
-    prompt = _build_prompt(text, clinical_context, typing_features, route, reframing_instructions)
+    try:
+        history_list = json.loads(history)
+    except:
+        history_list = []
+        
+    prompt = _build_prompt(text, clinical_context, typing_features, route, reframing_instructions, history_list)
 
-    # 10. Generation
+    # 10. Generation (Sync)
     from llm_engine import generate_response
     try:
         llm_response = generate_response(prompt)
@@ -226,7 +232,7 @@ async def analyze(
         logger.error("LLM generation failed: %s", e)
         llm_response = FALLBACK_RESPONSE
 
-    # 11. Secure Storage (Async-safe)
+    # 11. Secure Storage
     try:
         vault_data = {
             "original_text": original_text,
@@ -238,8 +244,8 @@ async def analyze(
             "route": route,
             "distortions": detected_distortions,
             "response": llm_response,
+            "streamed": False
         }
-        # Offload sync DB call to a thread pool
         await anyio.to_thread.run_sync(vault.encrypt_and_store, vault_data)
     except Exception as e:
         logger.error("Vault storage failed: %s", e)
@@ -254,13 +260,104 @@ async def analyze(
     )
 
 
-def _build_prompt(text: str, clinical_context: str, typing_features: dict, route: str, reframing_instructions: str) -> str:
+@app.post("/analyze/stream")
+async def analyze_stream(
+    text: str = Form(""),
+    typing: str = Form("{}"),
+    audio: UploadFile | None = File(None),
+    language: str | None = Form(None),
+    history: str = Form("[]"),
+):
     """
-    Build the structured prompt for Gemma.
-    Combines system guidance, history primes, and the current user input into 
-    a coherent multi-turn conversation format.
+    Industry-grade SSE streaming endpoint.
+    Strictly enforces Safety Hierarchy: Triage (Crisis/RAG) happens BEFORE the stream begins.
     """
-    # 1. Start with the System/Guidance Turn
+    from lang_utils import detect_language, translate_text, should_translate_for_llm
+    from llm_engine import get_inference_orchestrator
+    
+    # --- 1. Triage & Safety Hierarchy (Blocking) ---
+    try:
+        typing_features = json.loads(typing)
+    except:
+        typing_features = {}
+
+    audio_features = None
+    detected_language = None
+    
+    if text.strip():
+        detected_language, _ = detect_language(text)
+
+    # Audio Processing
+    if audio and audio.filename:
+        from audio_processing import transcribe_audio
+        from acoustic import extract_acoustic_features
+        suffix = os.path.splitext(audio.filename)[1] or ".wav"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(await audio.read())
+            tmp_path = tmp.name
+        try:
+            res = transcribe_audio(tmp_path, language=language or detected_language)
+            if res.get("text"):
+                text = f"{text} {res['text']}".strip()
+                detected_language = res.get("language") or detected_language
+            audio_features = extract_acoustic_features(tmp_path)
+        finally:
+            if os.path.exists(tmp_path): os.unlink(tmp_path)
+
+    # Validation & Crisis Gate
+    if not text.strip():
+        return {"response": EMPTY_INPUT_RESPONSE}
+    
+    if is_crisis(text):
+        return {"response": CRISIS_RESPONSE, "route": "crisis"}
+
+    # RAG & Routing
+    from rag_engine import retrieve_context
+    from router import CactusEdgeRouter
+    clinical_context = retrieve_context(text)
+    route = CactusEdgeRouter.route_task(text, audio_features, typing_features)
+    
+    detected_distortions = reframer.detect_distortions(text)
+    reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
+
+    try:
+        history_list = json.loads(history)
+    except:
+        history_list = []
+
+    prompt = _build_prompt(text, clinical_context, typing_features, route, reframing_instructions, history_list)
+
+    # --- 2. Streaming Delivery (Async) ---
+    async def event_generator():
+        orchestrator = get_inference_orchestrator()
+        full_response = ""
+        
+        # Initial metadata packet
+        yield f"data: {json.dumps({'type': 'metadata', 'route': route, 'distortions': detected_distortions})}\n\n"
+        
+        # Token stream
+        for token in orchestrator.generate_stream(prompt):
+            full_response += token
+            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            await anyio.sleep(0.01)
+
+        # Final storage packet
+        vault_data = {
+            "original_text": text,
+            "detected_language": detected_language,
+            "route": route,
+            "distortions": detected_distortions,
+            "response": full_response,
+            "streamed": True
+        }
+        await anyio.to_thread.run_sync(vault.encrypt_and_store, vault_data)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+def _build_prompt(text: str, clinical_context: str, typing_features: dict, route: str, reframing_instructions: str, history: list = []) -> str:
+    """Build the structured prompt for Gemma."""
     prompt = (
         "<start_of_turn>user\n"
         f"INSTRUCTIONS: {SYSTEM_INSTRUCTION}\n\n"
@@ -269,24 +366,26 @@ def _build_prompt(text: str, clinical_context: str, typing_features: dict, route
         "Understood. I will act as Sanctuary, providing empathetic Socratic guidance.<end_of_turn>\n"
     )
     
-    # 2. Add Few-Shot History Primes
     prompt += f"{FEW_SHOT_EXAMPLES}\n"
     
-    # 3. Add Current User Turn
+    for msg in history[-4:]:
+        role = "user" if msg.get("role") == "user" else "model"
+        content = msg.get("text", "")
+        prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
+    
     prompt += "<start_of_turn>user\n"
     if is_severe(text, typing_features, Config.TYPING_INTERVAL_STRESS_THRESHOLD):
-        prompt += f"[Clinical Context: {clinical_context}]\n"
+        if "Crisis" not in clinical_context or is_crisis(text):
+            prompt += f"[Clinical Context: {clinical_context}]\n"
         
     prompt += f"{text}<end_of_turn>\n"
-    
-    # 4. Model Response Start
-    prompt += "<start_of_turn>model\nSanctuary:"
+    prompt += "<start_of_turn>model\n"
     return prompt
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(feedback: FeedbackRequest):
-    """Store user feedback (Async-safe)."""
+    """Store user feedback."""
     if not Config.ENABLE_USER_FEEDBACK:
         return FeedbackResponse(status="disabled", message="Feedback disabled.")
 

@@ -27,3 +27,4 @@ langdetect==1.0.9
 # --- Core ---
 numpy<2.0
 pandas==2.2.3
+psutil==6.1.1

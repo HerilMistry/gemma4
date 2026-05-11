@@ -89,6 +89,7 @@ export default function SanctuaryJournal() {
     const formData = new FormData();
     formData.append('text', userText);
     formData.append('typing', JSON.stringify({ avg_interval: avgCadence }));
+    formData.append('history', JSON.stringify(messages));
 
     if (audioChunksRef.current.length > 0) {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
@@ -96,28 +97,76 @@ export default function SanctuaryJournal() {
     }
 
     try {
-      const res = await fetch('http://localhost:8000/analyze', {
+      // 2. Call the dedicated SSE streaming endpoint
+      const response = await fetch('http://localhost:8000/analyze/stream', {
         method: 'POST',
         body: formData,
       });
 
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
+      if (!response.ok) {
+        // Fallback for non-streaming or error responses (e.g., Crisis Gate)
+        const data = await response.json();
+        setMessages(prev => [...prev, { 
+          role: 'sanctuary', 
+          text: data.response,
+          distortions: data.distortions
+        }]);
+        return;
       }
 
-      const data = await res.json();
-      // 2. Append Sanctuary response to history
-      setMessages(prev => [...prev, { 
-        role: 'sanctuary', 
-        text: data.response,
-        distortions: data.distortions
-      }]);
+      // 3. Process the ReadableStream (SSE)
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) throw new Error("Stream reader not available");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
+          
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'metadata') {
+              // Add a fresh Sanctuary message container with metadata
+              setMessages(prev => [...prev, { 
+                role: 'sanctuary', 
+                text: '', 
+                distortions: data.distortions 
+              }]);
+            } else if (data.type === 'token') {
+              // Update the last Sanctuary message incrementally
+              setMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last && last.role === 'sanctuary') {
+                  updated[updated.length - 1] = {
+                    ...last,
+                    text: last.text + data.text
+                  };
+                }
+                return updated;
+              });
+            }
+          } catch (e) {
+            // Ignore incomplete JSON chunks occasionally caused by mid-token splits
+          }
+        }
+      }
+
+      // 4. Cleanup
       setTypingCadence([]);
       setLastKeystrokeTime(null);
       audioChunksRef.current = [];
     } catch (err) {
       console.error('Failed to submit', err);
-      setError('Could not reach Sanctuary. Make sure the backend is running on port 8000.');
+      setError('Could not reach Sanctuary. Ensure the backend is running and supports streaming.');
     } finally {
       setIsLoading(false);
     }
