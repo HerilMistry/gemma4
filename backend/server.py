@@ -255,19 +255,25 @@ async def analyze(
 
 
 def _build_prompt(text: str, clinical_context: str, typing_features: dict, route: str, reframing_instructions: str) -> str:
-    """Build the structured prompt for Gemma with reframing guidance."""
-    # 1. System Instruction + Reframing Guidance
+    """
+    Build the structured prompt for Gemma.
+    Combines system guidance, history primes, and the current user input into 
+    a coherent multi-turn conversation format.
+    """
+    # 1. Start with the System/Guidance Turn
     prompt = (
         "<start_of_turn>user\n"
-        f"{SYSTEM_INSTRUCTION}\n\n"
-        f"Specific Strategy: {reframing_instructions}<end_of_turn>\n"
+        f"INSTRUCTIONS: {SYSTEM_INSTRUCTION}\n\n"
+        f"CURRENT STRATEGY: {reframing_instructions}<end_of_turn>\n"
+        "<start_of_turn>model\n"
+        "Understood. I will act as Sanctuary, providing empathetic Socratic guidance.<end_of_turn>\n"
     )
     
-    # 2. History Primes
+    # 2. Add Few-Shot History Primes
     prompt += f"{FEW_SHOT_EXAMPLES}\n"
     
-    # 3. Current User Turn
-    prompt += f"<start_of_turn>user\n"
+    # 3. Add Current User Turn
+    prompt += "<start_of_turn>user\n"
     if is_severe(text, typing_features, Config.TYPING_INTERVAL_STRESS_THRESHOLD):
         prompt += f"[Clinical Context: {clinical_context}]\n"
         

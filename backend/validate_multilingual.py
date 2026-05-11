@@ -134,49 +134,60 @@ def check_database():
     
     try:
         # Create temp database
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            
-            with patch("database.Config.DB_PATH") as mock_db:
-                mock_db.__str__ = lambda: str(db_path)
-                mock_db.__fspath__ = lambda: str(db_path)
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "test.db"
+        key_path = Path(tmpdir) / "test_key.bin"
+        
+        try:
+            with patch("database.Config.DB_PATH", db_path), \
+                 patch("database.Config.KEY_FILE", key_path):
                 
                 from database import SecureVault
                 vault = SecureVault()
                 vault._ensure_init()
         
-        # Check schema
-        with sqlite3.connect(db_path) as conn:
-            tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-            table_names = [row[0] for row in tables]
-            
-            if "encrypted_logs" in table_names:
-                print("✅ encrypted_logs table exists")
-            else:
-                print("❌ encrypted_logs table NOT FOUND")
-                db_ok = False
-            
-            if "feedback" in table_names:
-                print("✅ feedback table exists")
-                
-                # Check feedback columns
-                feedback_columns = conn.execute(
-                    "PRAGMA table_info(feedback)"
+            # Check schema
+            conn = sqlite3.connect(db_path)
+            try:
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
                 ).fetchall()
-                col_names = [row[1] for row in feedback_columns]
+                table_names = [row[0] for row in tables]
                 
-                required_cols = ["id", "log_id", "rating", "feedback_text", "nonce", "ciphertext"]
-                for col in required_cols:
-                    if col in col_names:
-                        print(f"  ✅ Column: {col}")
-                    else:
-                        print(f"  ❌ Column: {col} — NOT FOUND")
-                        db_ok = False
-            else:
-                print("❌ feedback table NOT FOUND")
-                db_ok = False
+                if "encrypted_logs" in table_names:
+                    print("✅ encrypted_logs table exists")
+                else:
+                    print("❌ encrypted_logs table NOT FOUND")
+                    db_ok = False
+                
+                if "feedback" in table_names:
+                    print("✅ feedback table exists")
+                    
+                    # Check feedback columns
+                    feedback_columns = conn.execute(
+                        "PRAGMA table_info(feedback)"
+                    ).fetchall()
+                    col_names = [row[1] for row in feedback_columns]
+                    
+                    required_cols = ["id", "log_id", "rating", "feedback_text", "nonce", "ciphertext"]
+                    for col in required_cols:
+                        if col in col_names:
+                            print(f"  ✅ Column: {col}")
+                        else:
+                            print(f"  ❌ Column: {col} — NOT FOUND")
+                            db_ok = False
+                else:
+                    print("❌ feedback table NOT FOUND")
+                    db_ok = False
+            finally:
+                conn.close()
+        finally:
+            # Try to clean up, but don't fail if Windows holds a lock
+            import shutil
+            try:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+            except:
+                pass
     
     except Exception as e:
         print(f"❌ DATABASE ERROR: {e}")
