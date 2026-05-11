@@ -12,10 +12,13 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from config import Config
+from cache_utils import LRUCache
 
 logger = logging.getLogger(__name__)
 
 _collection = None
+# Simple in-memory LRU cache for RAG retrievals (process-local)
+_rag_cache = LRUCache(capacity=Config.CACHE_SIZE_RAG)
 
 # Clinical CBT protocols for grounding the LLM.
 # These are the verified therapeutic frameworks the model is allowed to reference.
@@ -140,11 +143,20 @@ def retrieve_context(query: str, k: int = 2) -> str:
     Returns:
         A newline-joined string of the most relevant protocols.
     """
+    # Cache key uses the query text and k
+    cache_key = (query, k)
+    cached = _rag_cache.get(cache_key)
+    if cached is not None:
+        logger.debug("RAG cache hit for query")
+        return cached
+
     try:
         collection = get_collection()
         results = collection.query(query_texts=[query], n_results=k)
         if results and results["documents"] and results["documents"][0]:
-            return "\n".join(results["documents"][0])
+            out = "\n".join(results["documents"][0])
+            _rag_cache.set(cache_key, out)
+            return out
     except Exception as e:
         logger.error("RAG retrieval failed: %s", e)
 

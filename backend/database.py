@@ -57,44 +57,52 @@ class SecureVault:
         self._aesgcm = AESGCM(self._key)
 
         os.makedirs(os.path.dirname(Config.DB_PATH), exist_ok=True)
-        with sqlite3.connect(Config.DB_PATH) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS encrypted_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    nonce BLOB NOT NULL,
-                    ciphertext BLOB NOT NULL
-                )
-            """)
-            # Feedback table: stores user ratings/feedback for responses
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS feedback (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    log_id INTEGER,
-                    timestamp TEXT NOT NULL,
-                    rating INTEGER,
-                    feedback_text TEXT,
-                    nonce BLOB NOT NULL,
-                    ciphertext BLOB NOT NULL
-                )
-            """)
+        # Run migrations (creates tables and tracks schema version)
+        try:
+            from migrations import get_default_migration_manager
+
+            mgr = get_default_migration_manager()
+            mgr.run_migrations()
+        except Exception:
+            # Fallback: attempt to create tables if migrations unavailable
+            with sqlite3.connect(Config.DB_PATH) as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS encrypted_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        nonce BLOB NOT NULL,
+                        ciphertext BLOB NOT NULL
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS feedback (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        log_id INTEGER,
+                        timestamp TEXT NOT NULL,
+                        rating INTEGER,
+                        feedback_text TEXT,
+                        nonce BLOB NOT NULL,
+                        ciphertext BLOB NOT NULL
+                    )
+                """)
         self._initialized = True
         logger.info("SecureVault initialized (DB: %s)", Config.DB_PATH)
 
-    def encrypt_and_store(self, data_dict: dict) -> None:
+    def encrypt_and_store(self, data_dict: dict) -> int:
         """Encrypt a dict via AES-256 GCM and store the blob in SQLite."""
         self._ensure_init()
 
         plaintext = json.dumps(data_dict).encode("utf-8")
         nonce = os.urandom(12)  # GCM standard 96-bit nonce
         ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
-
         with sqlite3.connect(Config.DB_PATH) as conn:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO encrypted_logs (timestamp, nonce, ciphertext) VALUES (?, ?, ?)",
                 (datetime.now().isoformat(), nonce, ciphertext),
             )
-        logger.debug("Encrypted and stored 1 log entry.")
+            row_id = cur.lastrowid
+        logger.debug("Encrypted and stored 1 log entry (id=%s).", row_id)
+        return row_id
 
     def retrieve_and_decrypt(self) -> list[dict]:
         """Retrieve and decrypt all stored logs."""

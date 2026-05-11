@@ -10,8 +10,12 @@ from typing import Generator, Protocol
 from llama_cpp import Llama
 
 from config import Config
+from cache_utils import LRUCache
 
 logger = logging.getLogger(__name__)
+
+# In-memory LRU cache for LLM outputs (process-local)
+_llm_cache = LRUCache(capacity=Config.CACHE_SIZE_LLM)
 
 class InferenceProvider(Protocol):
     """Protocol defining the interface for LLM inference engines."""
@@ -53,6 +57,13 @@ class LlamaCppProvider:
     def generate(self, prompt: str, max_tokens: int | None = None) -> str:
         """Synchronous generation for backward compatibility."""
         self._ensure_model_loaded()
+        # Try cache first (cache key includes prompt and generation params)
+        cache_key = (prompt, max_tokens)
+        cached = _llm_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("LLM cache hit for prompt")
+            return cached
+
         output = self._llm(
             prompt,
             max_tokens=max_tokens or Config.MAX_TOKENS,
@@ -61,11 +72,21 @@ class LlamaCppProvider:
             repeat_penalty=1.1,
             stop=["User:", "\n\n", "<end_of_turn>", "<eos>"]
         )
-        return output["choices"][0]["text"].strip()
+        result = output["choices"][0]["text"].strip()
+        _llm_cache.set(cache_key, result)
+        return result
 
     def generate_stream(self, prompt: str, max_tokens: int | None = None) -> Generator[str, None, None]:
         """Streaming generation (yields tokens) for snappy UX."""
         self._ensure_model_loaded()
+        cache_key = (prompt, max_tokens)
+        cached = _llm_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("LLM stream cache hit for prompt; replaying cached output")
+            # Yield the cached final output as a single chunk to replay quickly
+            yield cached
+            return
+
         stream = self._llm(
             prompt,
             max_tokens=max_tokens or Config.MAX_TOKENS,
@@ -75,10 +96,17 @@ class LlamaCppProvider:
             stop=["User:", "\n\n", "<end_of_turn>", "<eos>"],
             stream=True
         )
+        collected = []
         for chunk in stream:
             token = chunk["choices"][0]["text"]
             if token:
+                collected.append(token)
                 yield token
+
+        # Cache the final combined output for future fast responses
+        final = "".join(collected).strip()
+        if final:
+            _llm_cache.set(cache_key, final)
 
 # Global Singleton Orchestrator
 _provider: LlamaCppProvider | None = None

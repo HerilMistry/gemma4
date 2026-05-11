@@ -78,3 +78,7 @@ class Config:
     # --- Feedback & Analytics ---
     ENABLE_USER_FEEDBACK = os.getenv("SANCTUARY_ENABLE_FEEDBACK", "true").lower() == "true"
     FEEDBACK_STORAGE = os.getenv("SANCTUARY_FEEDBACK_STORAGE", "vault")  # "vault" or "separate_db"
+
+    # --- Caching (LRU) ---
+    CACHE_SIZE_RAG = int(os.getenv("SANCTUARY_CACHE_RAG", "128"))
+    CACHE_SIZE_LLM = int(os.getenv("SANCTUARY_CACHE_LLM", "64"))
