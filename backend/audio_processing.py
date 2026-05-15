@@ -1,14 +1,14 @@
 import whisper
 import os
+import logging
 
 from config import Config
-
 from vad import has_speech
 from core.sanitizer import mask_text
 
+logger = logging.getLogger(__name__)
+
 # Load the base model locally. 
-# In a real environment, this will download the model weights to ~/.cache/whisper on the first run.
-# 'base' or 'tiny' are good for edge devices.
 MODEL_NAME = Config.WHISPER_MODEL_NAME
 model = None
 
@@ -18,7 +18,7 @@ def get_whisper_model():
         try:
             model = whisper.load_model(MODEL_NAME)
         except Exception as e:
-            print(f"Error loading whisper: {e}")
+            logger.error(f"Error loading whisper: {e}")
     return model
 
 def transcribe_audio(audio_path, language: str | None = None):
@@ -30,9 +30,12 @@ def transcribe_audio(audio_path, language: str | None = None):
         return {"text": "", "language": None, "confidence": None}
 
     # --- Premium Feature: Silero VAD ---
-    if not has_speech(audio_path):
-        logger.info("VAD: No speech detected in audio. Skipping transcription.")
-        return {"text": "", "language": None, "confidence": None}
+    try:
+        if not has_speech(audio_path):
+            logger.info("VAD: No speech detected in audio. Skipping transcription.")
+            return {"text": "", "language": None, "confidence": None}
+    except Exception as e:
+        logger.warning(f"VAD failed: {e}. Proceeding with Whisper.")
         
     whisper_model = get_whisper_model()
     if whisper_model is None:
@@ -55,6 +58,5 @@ def transcribe_audio(audio_path, language: str | None = None):
             "confidence": None,
         }
     except Exception as e:
-        print(f"Error transcribing audio: {e}")
+        logger.error(f"Error transcribing audio: {e}")
         return {"text": f"[Transcription error: {str(e)}]", "language": None, "confidence": None}
-

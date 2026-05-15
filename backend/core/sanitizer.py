@@ -2,13 +2,6 @@
 Sanctuary 3.0 — PII Sanitizer & Masker
 Strict compliance tool to prevent sensitive personal information from 
 hitting the LLM or being stored in a way that could be reverse-engineered.
-
-Filters:
-- Emails
-- Phone Numbers
-- SSNs / Aadhaar / IDs
-- Street Addresses
-- Proper Names (Heuristic-based)
 """
 
 import re
@@ -29,34 +22,40 @@ class PIISanitizer:
     @classmethod
     def sanitize(cls, text: str) -> str:
         """
-        Mask PII in text using the defined patterns.
-        Replaces sensitive data with generic placeholders like [EMAIL] or [PHONE].
+        Mask PII in text using the defined patterns and heuristics.
         """
         sanitized = text
         for label, pattern in cls.PATTERNS.items():
             sanitized = re.sub(pattern, f"[{label.upper()}]", sanitized)
         
-        # Heuristic Name Masking (Very strict: masks words starting with capital letters 
-        # that aren't at the start of a sentence, though this can be noisy).
-        # For a "strictly followed" compliance, we focus on high-precision regex first.
-        
+        # Simple Name Heuristic: Mask common introductions
+        # Matches "My name is John Doe", "I am Jane", etc.
+        intro_patterns = [
+            r'(?i)(?:my name is|i am|this is|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+        ]
+        for pattern in intro_patterns:
+            def _mask_name(match):
+                full_match = match.group(0)
+                name_part = match.group(1)
+                intro = full_match.split(name_part)[0]
+                return f"{intro}[NAME]"
+            sanitized = re.sub(pattern, _mask_name, sanitized)
+
         return sanitized
 
     @classmethod
     def sanitize_biometrics(cls, features: dict) -> dict:
         """
-        Anonymize behavioral biometrics.
-        Normalizes and jitters data to prevent "device fingerprinting."
+        Anonymize behavioral biometrics by adding subtle jitter.
         """
         sanitized = features.copy()
-        
-        # Jittering: Add 5% random noise to pitch/interval to break fingerprinting 
-        # while preserving clinical signal.
         import random
         if "pitch" in sanitized:
             sanitized["pitch"] = round(sanitized["pitch"] * (1 + random.uniform(-0.05, 0.05)), 2)
         if "avg_interval" in sanitized:
-            sanitized["avg_interval"] = round(sanitized["avg_interval"] * (1 + random.uniform(-0.05, 0.05)), 2)
+            # avg_interval can be a number or a list
+            if isinstance(sanitized["avg_interval"], (int, float)):
+                sanitized["avg_interval"] = round(sanitized["avg_interval"] * (1 + random.uniform(-0.05, 0.05)), 2)
             
         return sanitized
 

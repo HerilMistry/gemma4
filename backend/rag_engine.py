@@ -1,10 +1,7 @@
 """
 Sanctuary 3.0 — RAG Engine
 Real vector search using ChromaDB + sentence-transformers.
-Replaces the broken mock FAISS that returned random vectors.
-
-The embedding model (all-MiniLM-L6-v2) downloads once on first run (~80MB),
-then works fully offline from the local cache.
+Supports HyDE (Hypothetical Document Embeddings) for clinical grounding.
 """
 
 import logging
@@ -12,16 +9,16 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from config import Config
-from cache_utils import LRUCache
+from cache_utils import SemanticCache
 
 logger = logging.getLogger(__name__)
 
 _collection = None
-# Simple in-memory LRU cache for RAG retrievals (process-local)
-_rag_cache = LRUCache(capacity=Config.CACHE_SIZE_RAG)
+_ef = None
+# Semantic in-memory cache for RAG retrievals (process-local)
+_rag_cache = SemanticCache(capacity=Config.CACHE_SIZE_RAG, threshold=0.88)
 
 # Clinical CBT protocols for grounding the LLM.
-# These are the verified therapeutic frameworks the model is allowed to reference.
 CLINICAL_PROTOCOLS = [
     # Anxiety-related distortions
     "CBT Protocol for Catastrophizing: The patient is imagining the worst-case scenario. "
@@ -71,17 +68,23 @@ CLINICAL_PROTOCOLS = [
 import pandas as pd
 from pathlib import Path
 
+def get_embedding_function():
+    global _ef
+    if _ef is None:
+        _ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=Config.EMBEDDING_MODEL,
+            device="cpu",
+        )
+    return _ef
+
 def get_collection():
-    """Lazy-initialize the ChromaDB collection with clinical protocols and Kaggle dataset."""
+    """Lazy-initialize the ChromaDB collection."""
     global _collection
     if _collection is not None:
         return _collection
 
     logger.info("Initializing ChromaDB at %s ...", Config.CHROMA_DB_PATH)
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=Config.EMBEDDING_MODEL,
-        device="cpu",
-    )
+    ef = get_embedding_function()
     client = chromadb.PersistentClient(path=Config.CHROMA_DB_PATH)
     _collection = client.get_or_create_collection(
         name="clinical_protocols",
@@ -91,21 +94,15 @@ def get_collection():
     # Seed the database if it's empty
     if _collection.count() == 0:
         logger.info("Seeding clinical protocols into ChromaDB...")
-        
-        # 1. Add hardcoded protocols
         _collection.add(
             documents=CLINICAL_PROTOCOLS,
             ids=[f"protocol_{i}" for i in range(len(CLINICAL_PROTOCOLS))],
         )
         
-        # 2. Add Kaggle dataset if available
         csv_path = Path(Config.KAGGLE_DATASET_PATH)
         if csv_path.exists():
-            logger.info("Indexing Kaggle dataset from %s ...", csv_path)
             try:
                 df = pd.read_csv(csv_path)
-                # Map CSV rows to descriptive strings for RAG
-                # Expected columns: Diagnosis, Symptom Severity (1-10), Therapy Type, Medication
                 kaggle_docs = []
                 for _, row in df.iterrows():
                     doc = (
@@ -115,47 +112,51 @@ def get_collection():
                         f"Medication: {row.get('Medication', 'N/A')}."
                     )
                     kaggle_docs.append(doc)
-                
                 _collection.add(
                     documents=kaggle_docs,
                     ids=[f"kaggle_{i}" for i in range(len(kaggle_docs))],
                 )
-                logger.info("Successfully indexed %d Kaggle records.", len(kaggle_docs))
-            except Exception as e:
-                logger.error("Failed to index Kaggle dataset: %s", e)
-        else:
-            logger.warning("Kaggle dataset not found at %s. Skipping Kaggle indexing.", csv_path)
-
-        logger.info("Seeding complete.")
+            except: pass
 
     return _collection
 
 
-
-def retrieve_context(query: str, k: int = 2) -> str:
+def retrieve_context(query: str, k: int = 2, hypothetical_query: str | None = None) -> str:
     """
-    Retrieve the top-k most relevant clinical protocols for a given user query.
-
-    Args:
-        query: The user's journal text.
-        k: Number of protocols to retrieve.
-
-    Returns:
-        A newline-joined string of the most relevant protocols.
+    Retrieve clinical context using multi-stage refinement.
+    Optionally uses HyDE by passing a hypothetical_query.
     """
-    # Cache key uses the query text and k
-    cache_key = (query, k)
-    cached = _rag_cache.get(cache_key)
-    if cached is not None:
-        logger.debug("RAG cache hit for query")
-        return cached
+    cache_key = (query, k, hypothetical_query)
+    
+    ef = get_embedding_function()
+    try:
+        search_text = hypothetical_query if hypothetical_query else query
+        query_embedding = ef([search_text])[0]
+    except Exception as e:
+        logger.error("Failed to generate embedding: %s", e)
+        query_embedding = None
+
+    if query_embedding is not None:
+        cached = _rag_cache.get(query_embedding)
+        if cached is not None:
+            return cached
 
     try:
         collection = get_collection()
-        results = collection.query(query_texts=[query], n_results=k)
+        if query_embedding is not None:
+            results = collection.query(query_embeddings=[query_embedding], n_results=max(k, 6))
+        else:
+            results = collection.query(query_texts=[search_text], n_results=max(k, 6))
+            
         if results and results["documents"] and results["documents"][0]:
-            out = "\n".join(results["documents"][0])
-            _rag_cache.set(cache_key, out)
+            docs = results["documents"][0]
+            crisis_docs = [d for d in docs if "Crisis" in d]
+            other_docs = [d for d in docs if "Crisis" not in d]
+            refined_docs = (crisis_docs + other_docs)[:k]
+            
+            out = "\n".join(refined_docs)
+            if query_embedding is not None:
+                _rag_cache.set(cache_key, query_embedding, out)
             return out
     except Exception as e:
         logger.error("RAG retrieval failed: %s", e)

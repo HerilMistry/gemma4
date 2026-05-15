@@ -7,11 +7,10 @@ Every value can be overridden via environment variables.
 import os
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
-
-
 class Config:
     """Central configuration for the Sanctuary 3.0 backend."""
+
+    BASE_DIR = Path(__file__).resolve().parent
 
     # --- Server ---
     HOST = os.getenv("SANCTUARY_HOST", "127.0.0.1")
@@ -19,9 +18,9 @@ class Config:
     DEBUG = os.getenv("SANCTUARY_DEBUG", "true").lower() == "true"
 
     # --- LLM Engine (llama-cpp-python) ---
-    # Place your .gguf file at: backend/models/sanctuary_cbt_final.gguf
+    # Place your .gguf file at: backend/models/sanctuary_cbt_final-q8_0.gguf
     MODEL_PATH = Path(
-        os.getenv("SANCTUARY_MODEL_PATH", str(BASE_DIR / "models" / "sanctuary_cbt_final.gguf"))
+        os.getenv("SANCTUARY_MODEL_PATH", str(BASE_DIR / "models" / "sanctuary_cbt_final-q8_0.gguf"))
     )
     N_CTX = int(os.getenv("SANCTUARY_N_CTX", "2048"))
     N_GPU_LAYERS = int(os.getenv("SANCTUARY_N_GPU_LAYERS", "0"))  # 0 = CPU only

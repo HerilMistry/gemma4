@@ -1,138 +1,129 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Mic, MicOff, Send, Activity, BrainCircuit, ShieldCheck, Lock } from 'lucide-react';
+import { Home, BrainCircuit, Settings, History, Menu } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Premium Components
+import HomeTab from '@/components/HomeTab';
+import TherapyTab from '@/components/TherapyTab';
+import VaultTab from '@/components/VaultTab';
+import HistorySidebar from '@/components/HistorySidebar';
 
 export default function SanctuaryJournal() {
+  // State
+  const [activeTab, setActiveTab] = useState<'home' | 'therapy' | 'vault'>('home');
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [typingCadence, setTypingCadence] = useState<number[]>([]);
   const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number | null>(null);
   const [messages, setMessages] = useState<Array<{
-    role: 'user' | 'sanctuary', 
+    role: 'user' | 'assistant', 
     text: string, 
     distortions?: Array<{name: string, description: string}>
   }>>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [telemetryLogs, setTelemetryLogs] = useState<string[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // --- Premium Feature: IndexedDB Persistence ---
-  useEffect(() => {
-    const initDB = async () => {
-      const request = indexedDB.open('SanctuaryVault', 1);
-      request.onupgradeneeded = (e: any) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains('drafts')) {
-          db.createObjectStore('drafts');
-        }
-      };
-      request.onsuccess = (e: any) => {
-        const db = e.target.result;
-        const tx = db.transaction('drafts', 'readonly');
-        const store = tx.objectStore('drafts');
-        const getReq = store.get('current_draft');
-        getReq.onsuccess = () => {
-          if (getReq.result && text === '') setText(getReq.result);
-        };
-      };
-    };
-    initDB();
-  }, []);
-
-  // Save draft whenever text changes
-  useEffect(() => {
-    if (!text) return;
-    const request = indexedDB.open('SanctuaryVault', 1);
-    request.onsuccess = (e: any) => {
-      const db = e.target.result;
-      const tx = db.transaction('drafts', 'readwrite');
-      const store = tx.objectStore('drafts');
-      store.put(text, 'current_draft');
-    };
-  }, [text]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
-  // Audio recording refs
+  // Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  const handleKeyDown = () => {
-    const now = Date.now();
-    if (lastKeystrokeTime) {
-      setTypingCadence(prev => [...prev, now - lastKeystrokeTime]);
+  // Helpers
+  const triggerHaptic = (duration: number | number[] = 50) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(duration as VibratePattern);
     }
-    setLastKeystrokeTime(now);
   };
 
+  const addTelemetryLog = (log: string) => {
+    setTelemetryLogs(prev => [log, ...prev].slice(0, 50));
+  };
+
+  // --- Session Management ---
+  const startNewChat = () => {
+    setMessages([]);
+    setActiveSessionId(null);
+    setText('');
+    setTypingCadence([]);
+    setActiveTab('therapy');
+    triggerHaptic([10, 30]);
+  };
+
+  const loadSession = async (sessionId: string) => {
+    setIsLoading(true);
+    setActiveSessionId(sessionId);
+    setActiveTab('therapy');
+    try {
+      const response = await fetch(`http://localhost:8000/sessions/${sessionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data.map((m: any) => ({ role: m.role, text: m.text })));
+      }
+    } catch (err) {
+      console.error("Failed to load session", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Audio Logic ---
   const startRecording = async () => {
+    triggerHaptic(50);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
       audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        console.log("Audio recorded", audioBlob);
-      };
-
       mediaRecorderRef.current.start();
       setIsRecording(true);
-    } catch (err) {
-      console.error("Error accessing mic", err);
-    }
+
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+    } catch (err) { console.error("Mic access failed", err); }
   };
 
   const stopRecording = () => {
+    triggerHaptic(30);
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      if (audioContextRef.current) audioContextRef.current.close();
     }
   };
 
-  const clearDraft = () => {
-    const request = indexedDB.open('SanctuaryVault', 1);
-    request.onsuccess = (e: any) => {
-      const db = e.target.result;
-      const tx = db.transaction('drafts', 'readwrite');
-      const store = tx.objectStore('drafts');
-      store.delete('current_draft');
-    };
+  const handleKeyDown = () => {
+    const now = Date.now();
+    if (lastKeystrokeTime) setTypingCadence(prev => [...prev, now - lastKeystrokeTime].slice(-50));
+    setLastKeystrokeTime(now);
   };
 
   const handleSubmit = async () => {
     if (!text.trim() && audioChunksRef.current.length === 0) return;
+    triggerHaptic([20, 40, 20]);
 
     const userText = text;
-    const avgCadence = typingCadence.length > 0 
-      ? typingCadence.reduce((a, b) => a + b, 0) / typingCadence.length 
-      : 0;
-
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setText('');
-    clearDraft(); // Clear persistent draft on success
     setIsLoading(true);
-    setError(null);
-
+    
     const formData = new FormData();
     formData.append('text', userText);
-    formData.append('typing', JSON.stringify({ avg_interval: avgCadence }));
-    formData.append('history', JSON.stringify(messages));
+    formData.append('typing', JSON.stringify({ avg_interval: typingCadence.length > 0 ? typingCadence.reduce((a, b) => a + b, 0) / typingCadence.length : 0 }));
+    formData.append('history', JSON.stringify(messages.slice(-6)));
+    if (activeSessionId) formData.append('session_id', activeSessionId);
 
     if (audioChunksRef.current.length > 0) {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
@@ -145,287 +136,135 @@ export default function SanctuaryJournal() {
         body: formData,
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        setMessages(prev => [...prev, { 
-          role: 'sanctuary', 
-          text: data.response,
-          distortions: data.distortions
-        }]);
-        return;
-      }
-
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      
-      if (!reader) throw new Error("Stream reader not available");
+      let buffer = ""; 
+      if (!reader) throw new Error("Stream failed");
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ') || trimmed.includes('[DONE]')) continue;
           
           try {
-            const data = JSON.parse(line.slice(6));
-            
+            const data = JSON.parse(trimmed.slice(6));
             if (data.type === 'metadata') {
-              setMessages(prev => [...prev, { 
-                role: 'sanctuary', 
-                text: '', 
-                distortions: data.distortions 
-              }]);
+              if (data.session_id && !activeSessionId) setActiveSessionId(data.session_id);
+              setMessages(prev => [...prev, { role: 'assistant', text: '', distortions: data.distortions }]);
             } else if (data.type === 'token') {
               setMessages(prev => {
                 const updated = [...prev];
                 const last = updated[updated.length - 1];
-                if (last && last.role === 'sanctuary') {
-                  updated[updated.length - 1] = {
-                    ...last,
-                    text: last.text + data.text
-                  };
+                if (last && last.role === 'assistant') {
+                  updated[updated.length - 1] = { ...last, text: last.text + data.text };
                 }
                 return updated;
               });
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       }
-
-      setTypingCadence([]);
-      setLastKeystrokeTime(null);
       audioChunksRef.current = [];
     } catch (err) {
-      console.error('Failed to submit', err);
-      setError('Could not reach Sanctuary. Ensure the backend is running and supports streaming.');
-    } finally {
-      setIsLoading(false);
-    }
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Core disconnected. Please check your local server.' }]);
+    } finally { setIsLoading(false); }
   };
 
-
   return (
-    <div className="min-h-screen bg-brand-900 text-text-primary p-6 md:p-12 font-sans selection:bg-accent-primary selection:text-white">
+    <div className="bg-black min-h-[100dvh] relative overflow-hidden font-sans text-white">
+      <div className="mesh-bg"></div>
       
-      <header className="flex justify-between items-center mb-12 max-w-4xl mx-auto">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-primary to-accent-secondary flex items-center justify-center shadow-lg shadow-accent-primary/20">
-            <BrainCircuit size={20} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white glow-text">Sanctuary</h1>
-            <p className="text-xs text-text-secondary flex items-center gap-1 mt-0.5">
-              <ShieldCheck size={12} className="text-accent-secondary" /> Offline Edge Compute
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4 text-sm font-medium">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-800 border border-brand-700 text-text-secondary">
-            <Lock size={14} className="text-accent-secondary" /> AES-256 Encrypted
-          </div>
-        </div>
-      </header>
+      <HistorySidebar 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)} 
+        onSelectSession={loadSession}
+        onNewChat={startNewChat}
+        activeSessionId={activeSessionId}
+      />
 
-      <main className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        <div className="md:col-span-2 space-y-6">
-          
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-panel rounded-2xl p-6 relative overflow-hidden"
+      <main className="relative z-10 h-[100dvh] flex flex-col">
+        {/* Header with History Trigger */}
+        <header className="pt-8 px-6 flex justify-between items-center z-20">
+          <button 
+            onClick={() => { triggerHaptic(10); setIsHistoryOpen(true); }}
+            className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
           >
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent-primary via-accent-secondary to-accent-primary"></div>
-            
-            <h2 className="text-lg font-semibold text-white mb-4">Current Session</h2>
-            
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="What's on your mind today? Sanctuary is listening..."
-              className="w-full h-48 bg-transparent resize-none border-none focus:ring-0 text-white placeholder-brand-700 text-lg leading-relaxed mb-4"
-              style={{ outline: 'none' }}
-            />
-            
-            <div className="flex justify-between items-center pt-4 border-t border-brand-700/50">
-              <div className="flex gap-3">
-                <button 
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 ${
-                    isRecording 
-                      ? 'bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse' 
-                      : 'bg-brand-800 text-text-secondary hover:text-white hover:bg-brand-700 border border-transparent'
-                  }`}
-                >
-                  {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
-                  <span className="text-sm font-medium">{isRecording ? 'Recording...' : 'Acoustic Input'}</span>
-                </button>
-              </div>
-              
-              <button 
-                onClick={handleSubmit}
-                disabled={(!text.trim() && !audioChunksRef.current.length) || isLoading}
-                className="flex items-center gap-2 px-6 py-2 rounded-full bg-accent-primary text-white font-medium hover:bg-accent-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>{isLoading ? 'Analyzing...' : 'Process'}</span>
-                <Send size={16} />
-              </button>
-            </div>
-          </motion.div>
+            <Menu size={20} />
+          </button>
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-accent-primary">Sanctuary</span>
+            <span className="text-xs text-text-muted font-medium">Industry Core v3.2.7</span>
+          </div>
+          <button 
+            onClick={startNewChat}
+            className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors text-accent-primary"
+          >
+            <History size={20} />
+          </button>
+        </header>
 
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="glass-panel rounded-2xl p-6 border-l-4 border-l-red-500"
-            >
-              <p className="text-red-400 text-sm">{error}</p>
-            </motion.div>
-          )}
-
-          <div className="space-y-6 pb-4">
-            {messages.map((msg, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`glass-panel rounded-2xl p-6 border-l-4 ${
-                  msg.role === 'user' ? 'border-l-brand-600' : 'border-l-accent-secondary'
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 ${
-                    msg.role === 'user' ? 'bg-brand-600/20' : 'bg-accent-secondary/20'
-                  }`}>
-                    {msg.role === 'user' ? (
-                      <BrainCircuit size={16} className="text-brand-400" />
-                    ) : (
-                      <BrainCircuit size={16} className="text-accent-secondary" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className={`text-sm font-medium mb-2 ${
-                      msg.role === 'user' ? 'text-brand-400' : 'text-accent-secondary'
-                    }`}>
-                      {msg.role === 'user' ? 'Your Thought' : 'Sanctuary Reframe'}
-                    </h3>
-                    <p className="text-white leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                    
-                    {msg.role === 'sanctuary' && msg.distortions && msg.distortions.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-brand-700/30">
-                        <div className="text-[10px] text-text-secondary uppercase tracking-widest mb-2 font-semibold">Distortions Identified</div>
-                        <div className="flex flex-wrap gap-2">
-                          {msg.distortions.map((d, i) => (
-                            <motion.div 
-                              key={i}
-                              initial={{ opacity: 0, scale: 0.9 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              transition={{ delay: i * 0.1 }}
-                              className="group relative"
-                            >
-                              <div className="px-2 py-1 rounded bg-accent-primary/10 border border-accent-primary/30 text-accent-primary text-[10px] font-bold uppercase tracking-tighter cursor-help">
-                                {d.name.replace('_', ' ')}
-                              </div>
-                              <div className="absolute bottom-full left-0 mb-2 w-48 p-2 bg-brand-800 border border-brand-700 rounded-lg text-[10px] text-text-primary opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
-                                {d.description}
-                              </div>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-            
-            {isLoading && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-3 px-6"
-              >
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-accent-secondary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                  <span className="w-1.5 h-1.5 bg-accent-secondary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                  <span className="w-1.5 h-1.5 bg-accent-secondary rounded-full animate-bounce"></span>
-                </div>
-                <span className="text-text-secondary text-xs font-mono tracking-widest uppercase">Analyzing...</span>
+        <div className="flex-1 overflow-y-auto pb-24 hide-scrollbar">
+          <AnimatePresence mode="wait">
+            {activeTab === 'home' && (
+              <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <HomeTab onStartSession={() => setActiveTab('therapy')} triggerHaptic={triggerHaptic} />
               </motion.div>
             )}
+            {activeTab === 'therapy' && (
+              <motion.div key="therapy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
+                <TherapyTab 
+                  messages={messages}
+                  isLoading={isLoading}
+                  isRecording={isRecording}
+                  text={text}
+                  setText={setText}
+                  onStartRecording={startRecording}
+                  onStopRecording={stopRecording}
+                  onSubmit={handleSubmit}
+                  onKeyDown={handleKeyDown}
+                  analyser={analyserRef.current}
+                />
+              </motion.div>
+            )}
+            {activeTab === 'vault' && (
+              <motion.div key="vault" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <VaultTab 
+                  telemetryLogs={telemetryLogs}
+                  typingCadence={typingCadence}
+                  isRecording={isRecording}
+                  isLoading={isLoading}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-            <div ref={messagesEndRef} />
+        {/* Navigation */}
+        <nav className="fixed bottom-0 left-0 w-full bg-black/40 backdrop-blur-3xl border-t border-white/5 pt-3 pb-8 px-8 z-50">
+          <div className="max-w-md mx-auto flex justify-between items-center h-14">
+            <button onClick={() => { triggerHaptic(15); setActiveTab('home'); }} className={`flex flex-col items-center gap-1.5 transition-all ${activeTab === 'home' ? 'text-white scale-110' : 'text-text-muted hover:text-white'}`}>
+              <Home size={24} className={activeTab === 'home' ? 'fill-white' : ''} />
+              <span className="text-[10px] font-bold tracking-widest uppercase">Home</span>
+            </button>
+            <button onClick={() => { triggerHaptic(15); setActiveTab('therapy'); }} className={`flex flex-col items-center gap-1.5 transition-all ${activeTab === 'therapy' ? 'text-accent-primary scale-110' : 'text-text-muted hover:text-white'}`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center -mt-6 bg-brand-800 border-2 transition-all ${activeTab === 'therapy' ? 'border-accent-primary shadow-[0_0_20px_rgba(29,185,84,0.3)]' : 'border-white/5'}`}>
+                <BrainCircuit size={24} />
+              </div>
+              <span className="text-[10px] font-bold tracking-widest uppercase mt-1">Session</span>
+            </button>
+            <button onClick={() => { triggerHaptic(15); setActiveTab('vault'); }} className={`flex flex-col items-center gap-1.5 transition-all ${activeTab === 'vault' ? 'text-white scale-110' : 'text-text-muted hover:text-white'}`}>
+              <Settings size={24} className={activeTab === 'vault' ? 'fill-white' : ''} />
+              <span className="text-[10px] font-bold tracking-widest uppercase">Vault</span>
+            </button>
           </div>
-
-        </div>
-
-        <div className="space-y-6">
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-            className="glass-panel rounded-2xl p-5"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
-                <Activity size={16} /> Real-Time Telemetry
-              </h3>
-              <div className="w-2 h-2 rounded-full bg-accent-secondary animate-pulse"></div>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-text-secondary">Typing Cadence Volatility</span>
-                  <span className="text-white font-mono">
-                    {typingCadence.length > 0 ? (typingCadence[typingCadence.length-1]).toFixed(0) : '0'} ms
-                  </span>
-                </div>
-                <div className="w-full bg-brand-800 rounded-full h-1.5">
-                  <div 
-                    className="bg-accent-primary h-1.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${Math.min((typingCadence.length > 0 ? typingCadence[typingCadence.length-1] / 10 : 0), 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-text-secondary">Acoustic Pitch Resonance</span>
-                  <span className="text-white font-mono">{isRecording ? 'Analyzing...' : 'Standby'}</span>
-                </div>
-                <div className="w-full bg-brand-800 rounded-full h-1.5">
-                  <div className={`h-1.5 rounded-full transition-all duration-300 ${isRecording ? 'bg-accent-secondary animate-pulse w-3/4' : 'bg-brand-700 w-0'}`}></div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="glass-panel rounded-2xl p-5 bg-gradient-to-br from-brand-800 to-brand-900 border border-brand-700"
-          >
-            <h3 className="text-sm font-medium text-white mb-3">Premium Privacy Core</h3>
-            <p className="text-xs text-text-secondary leading-relaxed mb-3">
-              Sanctuary 3.2 includes Silero VAD for precise voice detection and a strict PII Sanitizer that masks sensitive data before processing.
-            </p>
-            <div className="bg-brand-900 rounded-lg p-3 border border-brand-700 text-xs font-mono text-accent-secondary/80 flex flex-col gap-1">
-            <span>&gt; PII Masking: Active</span>
-            <span>&gt; Silero VAD: Calibrated</span>
-            <span>&gt; IndexedDB Drafts: Persisted</span>
-            <span>&gt; AES-256 Vault: Locked</span>
-            </div>
-          </motion.div>
-        </div>
-
+        </nav>
       </main>
     </div>
   );

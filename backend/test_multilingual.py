@@ -327,18 +327,18 @@ class TestAnalyzeEndpointMultilingual:
         
         return TestClient(app)
 
-    @patch("llm_engine.get_llm", return_value=MagicMock())
+    @patch("llm_engine.LlamaCppProvider.generate", return_value="Test response")
+    @patch("llm_engine.LlamaCppProvider.generate_hyde", return_value="Hypothetical doc")
     @patch("rag_engine.retrieve_context", return_value="Clinical context")
-    @patch("llm_engine.generate_response", return_value="Test response")
     @patch("router.CactusEdgeRouter.route_task", return_value="heavy_core")
     @patch("server.vault.encrypt_and_store")
     def test_analyze_endpoint_english(
         self,
         mock_encrypt,
         mock_route,
-        mock_generate,
         mock_rag,
-        mock_llm,
+        mock_hyde,
+        mock_generate,
         client,
     ):
         """Should process English text and return language metadata."""
@@ -356,18 +356,18 @@ class TestAnalyzeEndpointMultilingual:
         assert data["language"] == "en" or data["language"] is None  # May not detect on empty text
         mock_encrypt.assert_called_once()
 
-    @patch("llm_engine.get_llm", return_value=MagicMock())
+    @patch("llm_engine.LlamaCppProvider.generate", return_value="Respuesta de prueba")
+    @patch("llm_engine.LlamaCppProvider.generate_hyde", return_value="Doc hipotético")
     @patch("rag_engine.retrieve_context", return_value="Contexto clínico")
-    @patch("llm_engine.generate_response", return_value="Respuesta de prueba")
     @patch("router.CactusEdgeRouter.route_task", return_value="heavy_core")
     @patch("server.vault.encrypt_and_store")
     def test_analyze_endpoint_spanish(
         self,
         mock_encrypt,
         mock_route,
-        mock_generate,
         mock_rag,
-        mock_llm,
+        mock_hyde,
+        mock_generate,
         client,
     ):
         """Should process Spanish text and detect language."""
@@ -385,18 +385,18 @@ class TestAnalyzeEndpointMultilingual:
         # Language should be detected as Spanish or not set
         mock_encrypt.assert_called_once()
 
-    @patch("llm_engine.get_llm", return_value=MagicMock())
+    @patch("llm_engine.LlamaCppProvider.generate", return_value="Test response")
+    @patch("llm_engine.LlamaCppProvider.generate_hyde", return_value="Hypothetical doc")
     @patch("rag_engine.retrieve_context", return_value="Clinical context")
-    @patch("llm_engine.generate_response", return_value="Test response")
     @patch("router.CactusEdgeRouter.route_task", return_value="heavy_core")
     @patch("server.vault.encrypt_and_store")
     def test_analyze_endpoint_with_language_override(
         self,
         mock_encrypt,
         mock_route,
-        mock_generate,
         mock_rag,
-        mock_llm,
+        mock_hyde,
+        mock_generate,
         client,
     ):
         """Should accept user-specified language parameter."""
