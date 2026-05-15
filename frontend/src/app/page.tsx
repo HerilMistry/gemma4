@@ -33,6 +33,51 @@ export default function SanctuaryJournal() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  // --- Premium Feature: IndexedDB Persistence for Drafts ---
+  useEffect(() => {
+    const initDB = async () => {
+      const request = indexedDB.open('SanctuaryVault', 1);
+      request.onupgradeneeded = (e: any) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('drafts')) {
+          db.createObjectStore('drafts');
+        }
+      };
+      request.onsuccess = (e: any) => {
+        const db = e.target.result;
+        const tx = db.transaction('drafts', 'readonly');
+        const store = tx.objectStore('drafts');
+        const getReq = store.get('current_draft');
+        getReq.onsuccess = () => {
+          if (getReq.result && text === '') setText(getReq.result);
+        };
+      };
+    };
+    initDB();
+  }, []);
+
+  // Save draft whenever text changes
+  useEffect(() => {
+    if (!text) return;
+    const request = indexedDB.open('SanctuaryVault', 1);
+    request.onsuccess = (e: any) => {
+      const db = e.target.result;
+      const tx = db.transaction('drafts', 'readwrite');
+      const store = tx.objectStore('drafts');
+      store.put(text, 'current_draft');
+    };
+  }, [text]);
+
+  const clearDraft = () => {
+    const request = indexedDB.open('SanctuaryVault', 1);
+    request.onsuccess = (e: any) => {
+      const db = e.target.result;
+      const tx = db.transaction('drafts', 'readwrite');
+      const store = tx.objectStore('drafts');
+      store.delete('current_draft');
+    };
+  };
+
   // Helpers
   const triggerHaptic = (duration: number | number[] = 50) => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -117,6 +162,7 @@ export default function SanctuaryJournal() {
     const userText = text;
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setText('');
+    clearDraft();
     setIsLoading(true);
     
     const formData = new FormData();
