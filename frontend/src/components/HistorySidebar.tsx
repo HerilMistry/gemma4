@@ -25,7 +25,7 @@ export default function HistorySidebar({ isOpen, onClose, onSelectSession, onNew
   const fetchSessions = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/sessions');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/sessions`);
       if (response.ok) {
         const data = await response.json();
         setSessions(data);

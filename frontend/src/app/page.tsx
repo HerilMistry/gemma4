@@ -104,7 +104,7 @@ export default function SanctuaryJournal() {
     setActiveSessionId(sessionId);
     setActiveTab('therapy');
     try {
-      const response = await fetch(`http://localhost:8000/sessions/${sessionId}`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/sessions/${sessionId}`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.map((m: any) => ({ role: m.role, text: m.text })));
@@ -177,7 +177,7 @@ export default function SanctuaryJournal() {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/analyze/stream', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/analyze/stream`, {
         method: 'POST',
         body: formData,
       });
@@ -223,7 +223,7 @@ export default function SanctuaryJournal() {
 
       // Periodically trigger summarization for long-term memory (every 5 messages)
       if (messages.length > 0 && messages.length % 5 === 0) {
-        fetch(`http://localhost:8000/sessions/${activeSessionId}/summarize`, { method: 'POST' }).catch(() => {});
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/sessions/${activeSessionId}/summarize`, { method: 'POST' }).catch(() => {});
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Core disconnected. Please check your local server.' }]);
