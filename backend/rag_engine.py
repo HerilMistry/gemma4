@@ -62,6 +62,19 @@ CLINICAL_PROTOCOLS = [
     "1) Validate the user's emotions. 2) Identify the specific cognitive distortion. "
     "3) Ask a gentle, non-judgmental Socratic question to help the user examine the thought. "
     "Never diagnose, prescribe medication, or replace professional therapy.",
+
+    # Enhanced CBT Techniques
+    "CBT Technique: Cognitive Rehearsal. The patient visualizes themselves successfully handling a difficult situation. "
+    "Socratic reframe: What specific steps would you take in that situation? What strengths can you rely on?",
+    
+    "CBT Technique: Downward Arrow. Used to uncover underlying core beliefs. "
+    "Socratic reframe: If that thought were true, what would it mean to you? Why would that be so bad?",
+
+    "CBT Technique: Behavioral Activation. For depression, focusing on activities that provide mastery or pleasure. "
+    "Socratic reframe: What is one small activity you used to enjoy that you could try for 5 minutes today?",
+
+    "CBT Protocol for Disqualifying the Positive: The patient ignores positive experiences by insisting they don't count. "
+    "Socratic reframe: Why do you feel this positive event doesn't count? If a friend did this, would you say it didn't count for them too?",
 ]
 
 
@@ -121,10 +134,20 @@ def get_collection():
     return _collection
 
 
+_reranker = None
+
+def get_reranker():
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        # Use a lightweight cross-encoder for reranking
+        logger.info("Loading Cross-Encoder Reranker...")
+        _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
+    return _reranker
+
 def retrieve_context(query: str, k: int = 2, hypothetical_query: str | None = None) -> str:
     """
-    Retrieve clinical context using multi-stage refinement.
-    Optionally uses HyDE by passing a hypothetical_query.
+    Retrieve clinical context using multi-stage refinement and Cross-Encoder reranking.
     """
     cache_key = (query, k, hypothetical_query)
     
@@ -143,16 +166,34 @@ def retrieve_context(query: str, k: int = 2, hypothetical_query: str | None = No
 
     try:
         collection = get_collection()
+        # Retrieve more candidates for reranking
+        n_candidates = 10
         if query_embedding is not None:
-            results = collection.query(query_embeddings=[query_embedding], n_results=max(k, 6))
+            results = collection.query(query_embeddings=[query_embedding], n_results=n_candidates)
         else:
-            results = collection.query(query_texts=[search_text], n_results=max(k, 6))
+            results = collection.query(query_texts=[search_text], n_results=n_candidates)
             
         if results and results["documents"] and results["documents"][0]:
             docs = results["documents"][0]
-            crisis_docs = [d for d in docs if "Crisis" in d]
-            other_docs = [d for d in docs if "Crisis" not in d]
-            refined_docs = (crisis_docs + other_docs)[:k]
+            
+            # Stage 2: Reranking with Cross-Encoder
+            try:
+                reranker = get_reranker()
+                # Score each document against the original query
+                pairs = [[query, doc] for doc in docs]
+                scores = reranker.predict(pairs)
+                
+                # Sort docs by score
+                scored_docs = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+                reranked_docs = [doc for doc, score in scored_docs]
+                
+                # Prioritize crisis docs if query is sensitive
+                crisis_docs = [d for d in reranked_docs if "Crisis" in d]
+                other_docs = [d for d in reranked_docs if "Crisis" not in d]
+                refined_docs = (crisis_docs + other_docs)[:k]
+            except Exception as re_err:
+                logger.warning("Reranking failed, falling back to vector similarity: %s", re_err)
+                refined_docs = docs[:k]
             
             out = "\n".join(refined_docs)
             if query_embedding is not None:

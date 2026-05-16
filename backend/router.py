@@ -68,3 +68,39 @@ class CactusEdgeRouter:
             reasons if reasons else ["none — defaulting to lightweight"],
         )
         return route
+
+    @staticmethod
+    def get_user_state_summary(
+        audio_features: dict | None,
+        typing_features: dict,
+    ) -> str:
+        """
+        Generate a natural language description of the user's emotional/physical state
+        based on biometric signals.
+        """
+        signals = []
+        
+        # Typing cadence signals
+        avg_interval = typing_features.get("avg_interval", 0)
+        if avg_interval > 600:
+            signals.append("significant hesitation/slow processing")
+        elif avg_interval > Config.TYPING_INTERVAL_STRESS_THRESHOLD:
+            signals.append("mildly agitated typing")
+        elif 0 < avg_interval < 100:
+            signals.append("very rapid/urgent typing")
+            
+        # Acoustic signals
+        if audio_features:
+            pitch = audio_features.get("pitch", 0)
+            energy = audio_features.get("energy", 0)
+            if pitch > 220:
+                signals.append("high vocal pitch (indicates acute stress/anxiety)")
+            elif 0 < pitch < 80:
+                signals.append("low vocal energy/monotone (indicates potential depressive mood)")
+            if energy > 0.05:
+                signals.append("high vocal energy/volume")
+                
+        if not signals:
+            return "Stable/Baseline"
+            
+        return ", ".join(signals)

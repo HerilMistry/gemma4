@@ -29,6 +29,7 @@ from core.constants import (
 from core.crisis import is_crisis, is_severe
 from reframer import Reframer
 from core.sanitizer import PIISanitizer
+from memory import retrieve_past_memories, summarize_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)-20s | %(levelname)-7s | %(message)s")
 logger = logging.getLogger("sanctuary")
@@ -111,10 +112,12 @@ async def analyze(
         route = await anyio.to_thread.run_sync(CactusEdgeRouter.route_task, text, None, typing_features)
         detected_distortions = reframer.detect_distortions(text)
         reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
+        user_state = CactusEdgeRouter.get_user_state_summary(None, typing_features)
+        past_memories = await anyio.to_thread.run_sync(retrieve_past_memories, text)
 
         try: history_list = json.loads(history)
         except: history_list = []
-        messages = _build_messages(text, clinical_context, typing_features, route, reframing_instructions, history_list)
+        messages = _build_messages(text, clinical_context, user_state, route, reframing_instructions, past_memories, history_list)
         
         response_text = await anyio.to_thread.run_sync(orchestrator.generate, messages)
         try:
@@ -187,10 +190,12 @@ async def analyze_stream(
         route = await anyio.to_thread.run_sync(CactusEdgeRouter.route_task, text, audio_features, typing_features)
         detected_distortions = reframer.detect_distortions(text)
         reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
+        user_state = CactusEdgeRouter.get_user_state_summary(audio_features, typing_features)
+        past_memories = await anyio.to_thread.run_sync(retrieve_past_memories, text)
 
         try: history_list = json.loads(history)
         except: history_list = []
-        messages = _build_messages(text, clinical_context, typing_features, route, reframing_instructions, history_list)
+        messages = _build_messages(text, clinical_context, user_state, route, reframing_instructions, past_memories, history_list)
 
         async def event_generator():
             full_response = ""
@@ -211,6 +216,14 @@ async def analyze_stream(
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@app.post("/sessions/{session_id}/summarize")
+async def trigger_summarize(session_id: str):
+    history = await anyio.to_thread.run_sync(vault.retrieve_session_history, session_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="No history found for this session")
+    summary = await anyio.to_thread.run_sync(summarize_session, session_id, history)
+    return {"status": "success", "summary": summary}
+
 @app.post("/feedback")
 async def store_feedback(feedback: FeedbackRequest):
     if not Config.ENABLE_USER_FEEDBACK: return {"status": "disabled"}
@@ -224,16 +237,23 @@ async def _single_token_gen(text: str, route: str = "fallback"):
     yield f"data: {json.dumps({'type': 'token', 'text': text})}\n\n"
     yield "data: [DONE]\n\n"
 
-def _build_messages(text: str, clinical_context: str, typing_features: dict, route: str, reframing_instructions: str, history: list = []) -> list:
-    is_severe_flag = is_severe(text, typing_features)
+def _build_messages(text: str, clinical_context: str, user_state: str, route: str, reframing_instructions: str, past_memories: str = "", history: list = []) -> list:
     messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
-    if reframing_instructions: messages[0]["content"] += f"\n\nSTRATEGY: {reframing_instructions}"
+    if reframing_instructions: 
+        messages[0]["content"] += f"\n\nSTRATEGY: {reframing_instructions}"
+    if user_state:
+        messages[0]["content"] += f"\n\nUSER EMOTIONAL STATE (via Biometrics): {user_state}. Adjust your tone accordingly (e.g., be more grounding if high stress detected)."
+    if past_memories:
+        messages[0]["content"] += f"\n\nLONG-TERM MEMORY (Relevant Past Themes):\n{past_memories}\nUse this for continuity."
+    
     messages.extend(FEW_SHOT_EXAMPLES)
     for msg in history[-6:]:
         role = "user" if msg.get("role") == "user" else "assistant"
         messages.append({"role": role, "content": msg.get("text", "")})
+    
     user_content = ""
-    if is_severe_flag and clinical_context: user_content += f"[Clinical Grounding: {clinical_context}]\n"
+    if clinical_context: 
+        user_content += f"[Clinical Grounding: {clinical_context}]\n"
     user_content += text
     messages.append({"role": "user", "content": user_content})
     return messages

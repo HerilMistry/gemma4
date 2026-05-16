@@ -217,7 +217,14 @@ export default function SanctuaryJournal() {
           } catch (e) { }
         }
       }
+      setTypingCadence([]);
+      setLastKeystrokeTime(null);
       audioChunksRef.current = [];
+
+      // Periodically trigger summarization for long-term memory (every 5 messages)
+      if (messages.length > 0 && messages.length % 5 === 0) {
+        fetch(`http://localhost:8000/sessions/${activeSessionId}/summarize`, { method: 'POST' }).catch(() => {});
+      }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Core disconnected. Please check your local server.' }]);
     } finally { setIsLoading(false); }
