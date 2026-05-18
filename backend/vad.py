@@ -38,6 +38,10 @@ class SileroVAD:
         """
         Quickly check if the audio file contains any speech.
         """
+        # Reset RNN states for every fresh audio stream check to avoid multi-request state leakage
+        self._h = np.zeros((2, 1, 64)).astype('float32')
+        self._c = np.zeros((2, 1, 64)).astype('float32')
+
         if not self._init_session():
             return True # Fallback to transcription if VAD unavailable
             

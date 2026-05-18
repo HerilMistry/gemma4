@@ -200,41 +200,42 @@ async def analyze_stream(
     if is_crisis(text): return StreamingResponse(_single_token_gen(CRISIS_RESPONSE, route="crisis"), media_type="text/event-stream", headers=headers)
 
     orchestrator = get_inference_orchestrator()
-    async with inference_semaphore:
-        is_severe_state = is_severe(text, typing_features)
-        hypothetical_doc = None
-        if is_severe_state:
+    is_severe_state = is_severe(text, typing_features)
+    hypothetical_doc = None
+    if is_severe_state:
+        async with inference_semaphore:
             hypothetical_doc = await anyio.to_thread.run_sync(orchestrator.generate_hyde, text)
         
-        clinical_context = await anyio.to_thread.run_sync(retrieve_context, text, 2, hypothetical_doc)
-        route = await anyio.to_thread.run_sync(CactusEdgeRouter.route_task, text, audio_features, typing_features)
-        detected_distortions = reframer.detect_distortions(text)
-        reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
-        user_state = CactusEdgeRouter.get_user_state_summary(audio_features, typing_features)
-        past_memories = await anyio.to_thread.run_sync(retrieve_past_memories, text)
+    clinical_context = await anyio.to_thread.run_sync(retrieve_context, text, 2, hypothetical_doc)
+    route = await anyio.to_thread.run_sync(CactusEdgeRouter.route_task, text, audio_features, typing_features)
+    detected_distortions = reframer.detect_distortions(text)
+    reframing_instructions = reframer.get_reframing_instructions(detected_distortions)
+    user_state = CactusEdgeRouter.get_user_state_summary(audio_features, typing_features)
+    past_memories = await anyio.to_thread.run_sync(retrieve_past_memories, text)
 
-        try: history_list = json.loads(history)
-        except: history_list = []
-        messages = _build_messages(text, clinical_context, user_state, route, reframing_instructions, past_memories, history_list)
+    try: history_list = json.loads(history)
+    except: history_list = []
+    messages = _build_messages(text, clinical_context, user_state, route, reframing_instructions, past_memories, history_list)
 
-        async def event_generator():
-            full_response = ""
-            yield f"data: {json.dumps({'type': 'metadata', 'route': route, 'distortions': detected_distortions, 'session_id': active_session_id})}\n\n"
-            try:
+    async def event_generator():
+        full_response = ""
+        yield f"data: {json.dumps({'type': 'metadata', 'route': route, 'distortions': detected_distortions, 'session_id': active_session_id})}\n\n"
+        try:
+            async with inference_semaphore:
                 for token in orchestrator.generate_stream(messages):
                     if await request.is_disconnected(): break
                     full_response += token
                     yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-            except: yield f"data: {json.dumps({'type': 'token', 'text': ' [Core Error]'})}\n\n"
-            try:
-                await anyio.to_thread.run_sync(vault.encrypt_and_store, {
-                    "original_text": text, "route": route, "distortions": detected_distortions, "response": full_response, "streamed": True
-                }, active_session_id)
-            except: pass
-            yield "data: [DONE]\n\n"
-            gc.collect()
+        except: yield f"data: {json.dumps({'type': 'token', 'text': ' [Core Error]'})}\n\n"
+        try:
+            await anyio.to_thread.run_sync(vault.encrypt_and_store, {
+                "original_text": text, "route": route, "distortions": detected_distortions, "response": full_response, "streamed": True
+            }, active_session_id)
+        except: pass
+        yield "data: [DONE]\n\n"
+        gc.collect()
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 @app.post("/sessions/{session_id}/summarize")
 async def trigger_summarize(session_id: str):

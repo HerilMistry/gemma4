@@ -22,7 +22,11 @@ def get_summary_collection():
 
     logger.info("Initializing Summary Memory at %s ...", Config.CHROMA_DB_PATH)
     ef = get_embedding_function()
-    client = chromadb.PersistentClient(path=Config.CHROMA_DB_PATH)
+    from chromadb.config import Settings
+    client = chromadb.PersistentClient(
+        path=Config.CHROMA_DB_PATH,
+        settings=Settings(anonymized_telemetry=False)
+    )
     _summary_collection = client.get_or_create_collection(
         name="session_summaries",
         embedding_function=ef,

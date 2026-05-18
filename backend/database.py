@@ -34,7 +34,7 @@ class SecureVault:
         self._key = _get_or_create_key()
         self._aesgcm = AESGCM(self._key)
         os.makedirs(os.path.dirname(Config.DB_PATH), exist_ok=True)
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS encrypted_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +64,7 @@ class SecureVault:
         plaintext = json.dumps(data_dict).encode("utf-8")
         nonce = os.urandom(12)
         ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             cur = conn.execute(
                 "INSERT INTO encrypted_logs (session_id, timestamp, nonce, ciphertext) VALUES (?, ?, ?, ?)",
                 (session_id, datetime.now().isoformat(), nonce, ciphertext),
@@ -73,7 +73,7 @@ class SecureVault:
 
     def retrieve_session_history(self, session_id: str) -> list[dict]:
         self._ensure_init()
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             rows = conn.execute(
                 "SELECT id, timestamp, nonce, ciphertext FROM encrypted_logs WHERE session_id = ? ORDER BY timestamp ASC",
                 (session_id,)
@@ -93,7 +93,7 @@ class SecureVault:
 
     def list_sessions(self) -> list[dict]:
         self._ensure_init()
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             rows = conn.execute("SELECT session_id, MIN(timestamp), nonce, ciphertext FROM encrypted_logs GROUP BY session_id ORDER BY MIN(timestamp) DESC").fetchall()
         sessions = []
         for sid, start, nonce, ciphertext in rows:
@@ -111,12 +111,12 @@ class SecureVault:
         plaintext = json.dumps(data).encode("utf-8")
         nonce = os.urandom(12)
         ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             conn.execute("INSERT INTO feedback (log_id, timestamp, rating, feedback_text, nonce, ciphertext) VALUES (?, ?, ?, ?, ?, ?)", (log_id, datetime.now().isoformat(), rating, feedback_text, nonce, ciphertext))
 
     def retrieve_and_decrypt_feedback(self) -> list[dict]:
         self._ensure_init()
-        with sqlite3.connect(Config.DB_PATH) as conn:
+        with sqlite3.connect(Config.DB_PATH, timeout=30.0) as conn:
             rows = conn.execute("SELECT id, log_id, timestamp, rating, feedback_text, nonce, ciphertext FROM feedback").fetchall()
         decrypted = []
         for rid, lid, ts, rate, ftext, nonce, ciphertext in rows:
