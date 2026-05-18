@@ -18,9 +18,9 @@ class Config:
     DEBUG = os.getenv("SANCTUARY_DEBUG", "true").lower() == "true"
 
     # --- LLM Engine (llama-cpp-python) ---
-    # Place your .gguf file at: backend/models/sanctuary_cbt_final-q8_0.gguf
+    # Place your .gguf file at: backend/models/sanctuary_cbt_final.gguf
     MODEL_PATH = Path(
-        os.getenv("SANCTUARY_MODEL_PATH", str(BASE_DIR / "models" / "sanctuary_cbt_final-q8_0.gguf"))
+        os.getenv("SANCTUARY_MODEL_PATH", str(BASE_DIR / "models" / "sanctuary_cbt_final.gguf"))
     )
     N_CTX = int(os.getenv("SANCTUARY_N_CTX", "2048"))
     N_GPU_LAYERS = int(os.getenv("SANCTUARY_N_GPU_LAYERS", "0"))  # 0 = CPU only

@@ -14,12 +14,54 @@ from core.constants import HYDE_PROMPT
 
 logger = logging.getLogger(__name__)
 
-# In-memory LRU cache
 _llm_cache = LRUCache(capacity=Config.CACHE_SIZE_LLM)
 
 class InferenceProvider(Protocol):
     def generate(self, messages: list, max_tokens: int | None = None) -> str: ...
     def generate_stream(self, messages: list, max_tokens: int | None = None) -> Generator[str, None, None]: ...
+
+
+def _build_gemma_prompt(messages: list) -> str:
+    """
+    Format the message list into the official Gemma Instruct template:
+    <start_of_turn>user
+    {system_instruction}\n\nUser input: {user_input}<end_of_turn>
+    <start_of_turn>model
+    """
+    system_content = ""
+    turns = []
+    
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "").strip()
+        
+        if role == "system":
+            system_content = content
+        elif role in ("user", "human"):
+            turns.append(("user", content))
+        elif role in ("assistant", "model"):
+            turns.append(("model", content))
+            
+    prompt = ""
+    first_turn = True
+    for role, content in turns:
+        # Inject system prompt into the first user turn if present
+        if first_turn and role == "user" and system_content:
+            content = f"{system_content}\n\nUser input: {content}"
+        first_turn = False
+            
+        prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
+        
+    prompt += "<start_of_turn>model\n"
+    return prompt
+
+
+def _extract_sanctuary_response(text: str) -> str:
+    """Extracts the therapist's response from structural reasoning output if present."""
+    if "Sanctuary Response:" in text:
+        parts = text.split("Sanctuary Response:", 1)
+        return parts[1].strip()
+    return text.strip()
 
 
 class LlamaCppProvider:
@@ -32,7 +74,22 @@ class LlamaCppProvider:
             return
 
         if not self._model_path.exists():
-            raise FileNotFoundError(f"GGUF model not found at {self._model_path}")
+            import os
+            logger.info("GGUF model not found locally at %s. Initiating automatic self-healing download...", self._model_path)
+            self._model_path.parent.mkdir(parents=True, exist_ok=True)
+            # Default to public weights from user's huggingface repository
+            default_url = "https://huggingface.co/HerilMistry/gemma4/resolve/main/sanctuary_cbt_final.gguf"
+            url = os.getenv("SANCTUARY_MODEL_URL", default_url)
+            try:
+                import urllib.request
+                logger.info("Downloading quantized Gemma 4 model from %s...", url)
+                urllib.request.urlretrieve(url, str(self._model_path))
+                logger.info("Download completed successfully!")
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"GGUF model not found at {self._model_path} and automatic download from {url} failed: {e}. "
+                    "Please place sanctuary_cbt_final.gguf manually in the models/ directory."
+                )
 
         logger.info("Loading Sanctuary Core (%s)...", self._model_path.name)
         
@@ -56,18 +113,25 @@ class LlamaCppProvider:
         if cached is not None:
             return cached
 
-        # Industry standard: Min-P sampling (0.05 - 0.1)
-        output = self._llm.create_chat_completion(
-            messages=messages,
+        prompt = _build_gemma_prompt(messages)
+        
+        # Min-P sampling (0.05 - 0.1)
+        output = self._llm(
+            prompt=prompt,
             max_tokens=max_tokens or Config.MAX_TOKENS,
-            temperature=0.7, 
+            temperature=0.7,
             top_p=0.9,
-            min_p=0.05, 
+            min_p=0.05,
             repeat_penalty=1.1,
+            stop=["<end_of_turn>", "<eos>"]
         )
-        result = output["choices"][0]["message"]["content"].strip()
-        _llm_cache.set(cache_key, result)
-        return result
+        result = output["choices"][0]["text"].strip()
+        
+        # Clean structural prefix if model outputs it
+        clean_result = _extract_sanctuary_response(result)
+        
+        _llm_cache.set(cache_key, clean_result)
+        return clean_result
 
     def generate_stream(self, messages: list, max_tokens: int | None = None) -> Generator[str, None, None]:
         self._ensure_model_loaded()
@@ -77,27 +141,47 @@ class LlamaCppProvider:
             yield cached
             return
 
-        stream = self._llm.create_chat_completion(
-            messages=messages,
+        prompt = _build_gemma_prompt(messages)
+        
+        stream = self._llm(
+            prompt=prompt,
             max_tokens=max_tokens or Config.MAX_TOKENS,
             temperature=0.7,
             top_p=0.9,
             min_p=0.05,
             repeat_penalty=1.1,
+            stop=["<end_of_turn>", "<eos>"],
             stream=True
         )
+        
+        buffer = ""
+        prefix_skipped = False
         collected = []
+        
         for chunk in stream:
             if "choices" in chunk and len(chunk["choices"]) > 0:
-                delta = chunk["choices"][0]["delta"]
-                if "content" in delta:
-                    token = delta["content"]
-                    collected.append(token)
+                token = chunk["choices"][0]["text"]
+                collected.append(token)
+                
+                if not prefix_skipped:
+                    buffer += token
+                    if "Sanctuary Response:" in buffer:
+                        parts = buffer.split("Sanctuary Response:", 1)
+                        content = parts[1].lstrip()
+                        if content:
+                            yield content
+                        prefix_skipped = True
+                    elif len(buffer) > 150:
+                        # Fallback if structural header is absent, flush buffer
+                        yield buffer
+                        prefix_skipped = True
+                else:
                     yield token
 
         final = "".join(collected).strip()
         if final:
-            _llm_cache.set(cache_key, final)
+            clean_final = _extract_sanctuary_response(final)
+            _llm_cache.set(cache_key, clean_final)
 
     def generate_hyde(self, query: str) -> str:
         """Generate a hypothetical clinical response for HyDE retrieval."""

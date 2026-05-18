@@ -40,18 +40,18 @@ def check_imports():
             if isinstance(items, list):
                 for item in items:
                     if not hasattr(module, item):
-                        print(f"❌ {module_name}.{item} — NOT FOUND")
+                        print(f"[FAIL] {module_name}.{item} - NOT FOUND")
                         imports_ok = False
                     else:
-                        print(f"✅ {module_name}.{item}")
+                        print(f"[OK] {module_name}.{item}")
             else:
                 if not hasattr(module, items):
-                    print(f"❌ {module_name}.{items} — NOT FOUND")
+                    print(f"[FAIL] {module_name}.{items} - NOT FOUND")
                     imports_ok = False
                 else:
-                    print(f"✅ {module_name}.{items}")
+                    print(f"[OK] {module_name}.{items}")
         except ImportError as e:
-            print(f"❌ {module_name} — IMPORT ERROR: {e}")
+            print(f"[FAIL] {module_name} - IMPORT ERROR: {e}")
             imports_ok = False
     
     return imports_ok
@@ -77,9 +77,9 @@ def check_config():
     for cfg in new_configs:
         if hasattr(Config, cfg):
             value = getattr(Config, cfg)
-            print(f"✅ Config.{cfg} = {value}")
+            print(f"[OK] Config.{cfg} = {value}")
         else:
-            print(f"❌ Config.{cfg} — NOT FOUND")
+            print(f"[FAIL] Config.{cfg} - NOT FOUND")
             config_ok = False
     
     return config_ok
@@ -105,16 +105,16 @@ def check_language_detection():
         try:
             detected_lang, confidence = detect_language(text)
             if detected_lang == expected_lang:
-                print(f"✅ '{text}' → {detected_lang} (confidence: {confidence:.2f})")
+                print(f"[OK] '{text}' -> {detected_lang} (confidence: {confidence:.2f})")
             else:
-                print(f"⚠️  '{text}' → {detected_lang} (expected: {expected_lang})")
+                print(f"[WARN]  '{text}' -> {detected_lang} (expected: {expected_lang})")
                 # Not a failure, just a notice
         except Exception as e:
-            print(f"❌ '{text}' — DETECTION ERROR: {e}")
+            print(f"[FAIL] '{text}' - DETECTION ERROR: {e}")
             detect_ok = False
     
     # Check language map
-    print(f"\n✅ Whisper language map has {len(WHISPER_LANGUAGE_MAP)} entries")
+    print(f"\n[OK] Whisper language map has {len(WHISPER_LANGUAGE_MAP)} entries")
     
     return detect_ok
 
@@ -155,13 +155,13 @@ def check_database():
                 table_names = [row[0] for row in tables]
                 
                 if "encrypted_logs" in table_names:
-                    print("✅ encrypted_logs table exists")
+                    print("[OK] encrypted_logs table exists")
                 else:
-                    print("❌ encrypted_logs table NOT FOUND")
+                    print("[FAIL] encrypted_logs table NOT FOUND")
                     db_ok = False
                 
                 if "feedback" in table_names:
-                    print("✅ feedback table exists")
+                    print("[OK] feedback table exists")
                     
                     # Check feedback columns
                     feedback_columns = conn.execute(
@@ -172,12 +172,12 @@ def check_database():
                     required_cols = ["id", "log_id", "rating", "feedback_text", "nonce", "ciphertext"]
                     for col in required_cols:
                         if col in col_names:
-                            print(f"  ✅ Column: {col}")
+                            print(f"  [OK] Column: {col}")
                         else:
-                            print(f"  ❌ Column: {col} — NOT FOUND")
+                            print(f"  [FAIL] Column: {col} - NOT FOUND")
                             db_ok = False
                 else:
-                    print("❌ feedback table NOT FOUND")
+                    print("[FAIL] feedback table NOT FOUND")
                     db_ok = False
             finally:
                 conn.close()
@@ -190,7 +190,7 @@ def check_database():
                 pass
     
     except Exception as e:
-        print(f"❌ DATABASE ERROR: {e}")
+        print(f"[FAIL] DATABASE ERROR: {e}")
         db_ok = False
     
     return db_ok
@@ -212,10 +212,10 @@ def check_response_models():
         analyze_required = {"response", "route_used", "language", "language_name", "translated"}
         
         if analyze_required.issubset(analyze_fields):
-            print(f"✅ AnalyzeResponse has required fields: {', '.join(analyze_required)}")
+            print(f"[OK] AnalyzeResponse has required fields: {', '.join(analyze_required)}")
         else:
             missing = analyze_required - set(analyze_fields)
-            print(f"❌ AnalyzeResponse missing fields: {', '.join(missing)}")
+            print(f"[FAIL] AnalyzeResponse missing fields: {', '.join(missing)}")
             models_ok = False
         
         # Check FeedbackRequest
@@ -223,10 +223,10 @@ def check_response_models():
         feedback_req_required = {"log_id", "rating", "feedback_text"}
         
         if feedback_req_required.issubset(feedback_req_fields):
-            print(f"✅ FeedbackRequest has required fields: {', '.join(feedback_req_required)}")
+            print(f"[OK] FeedbackRequest has required fields: {', '.join(feedback_req_required)}")
         else:
             missing = feedback_req_required - set(feedback_req_fields)
-            print(f"❌ FeedbackRequest missing fields: {', '.join(missing)}")
+            print(f"[FAIL] FeedbackRequest missing fields: {', '.join(missing)}")
             models_ok = False
         
         # Check FeedbackResponse
@@ -234,14 +234,14 @@ def check_response_models():
         feedback_resp_required = {"status", "message"}
         
         if feedback_resp_required.issubset(feedback_resp_fields):
-            print(f"✅ FeedbackResponse has required fields: {', '.join(feedback_resp_required)}")
+            print(f"[OK] FeedbackResponse has required fields: {', '.join(feedback_resp_required)}")
         else:
             missing = feedback_resp_required - set(feedback_resp_fields)
-            print(f"❌ FeedbackResponse missing fields: {', '.join(missing)}")
+            print(f"[FAIL] FeedbackResponse missing fields: {', '.join(missing)}")
             models_ok = False
     
     except Exception as e:
-        print(f"❌ RESPONSE MODEL ERROR: {e}")
+        print(f"[FAIL] RESPONSE MODEL ERROR: {e}")
         models_ok = False
     
     return models_ok
@@ -250,11 +250,11 @@ def check_response_models():
 def main():
     """Run all checks."""
     print("\n")
-    print("╔" + "=" * 58 + "╗")
-    print("║" + " " * 58 + "║")
-    print("║" + "  SANCTUARY 3.0 — MULTILINGUAL & FEEDBACK VALIDATION".center(58) + "║")
-    print("║" + " " * 58 + "║")
-    print("╚" + "=" * 58 + "╝")
+    print("+" + "=" * 58 + "+")
+    print("|" + " " * 58 + "|")
+    print("|" + "  SANCTUARY 3.0 - MULTILINGUAL & FEEDBACK VALIDATION".center(58) + "|")
+    print("|" + " " * 58 + "|")
+    print("+" + "=" * 58 + "+")
     print()
     
     results = {
@@ -272,21 +272,21 @@ def main():
     
     all_ok = True
     for check_name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"{status} — {check_name}")
+        status = "[OK] PASS" if result else "[FAIL] FAIL"
+        print(f"{status} - {check_name}")
         if not result:
             all_ok = False
     
     print("\n" + "=" * 60)
     if all_ok:
-        print("✅ ALL CHECKS PASSED")
+        print("[OK] ALL CHECKS PASSED")
         print("\nNext steps:")
         print("1. Install dependencies: pip install langdetect")
         print("2. Review MULTILINGUAL_GUIDE.md for configuration & API docs")
         print("3. Run tests: pytest backend/test_multilingual.py -v")
         print("4. Deploy and enable feedback collection!")
     else:
-        print("❌ SOME CHECKS FAILED")
+        print("[FAIL] SOME CHECKS FAILED")
         print("\nPlease review the errors above and fix before deploying.")
     print("=" * 60)
     

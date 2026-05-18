@@ -82,7 +82,7 @@ export default function VaultTab({ telemetryLogs, typingCadence, isRecording, is
               <h3 className="text-base font-bold text-white uppercase tracking-wider">System Logs</h3>
             </div>
             <div className="px-2 py-1 rounded-md bg-brand-950 border border-white/5 text-[9px] font-mono text-text-muted">
-              v3.2.0-STABLE
+              v3.2.8
             </div>
           </div>
           

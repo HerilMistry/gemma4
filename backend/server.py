@@ -60,6 +60,20 @@ class FeedbackRequest(BaseModel):
     rating: int
     feedback_text: str | None = None
 
+class AnalyzeResponse(BaseModel):
+    response: str
+    language: str | None = None
+    language_name: str | None = None
+    translated: bool | None = None
+    route_used: str | None = None
+    route: str | None = None
+    distortions: list[str] | None = None
+    session_id: str | None = None
+
+class FeedbackResponse(BaseModel):
+    status: str
+    message: str | None = None
+
 # --- Endpoints ---
 
 @app.get("/health")
@@ -76,7 +90,7 @@ async def get_session_history(session_id: str):
     try: return await anyio.to_thread.run_sync(vault.retrieve_session_history, session_id)
     except: raise HTTPException(status_code=404, detail="Session not found")
 
-@app.post("/analyze")
+@app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(
     text: str = Form(""),
     typing: str = Form("{}"),
@@ -224,7 +238,7 @@ async def trigger_summarize(session_id: str):
     summary = await anyio.to_thread.run_sync(summarize_session, session_id, history)
     return {"status": "success", "summary": summary}
 
-@app.post("/feedback")
+@app.post("/feedback", response_model=FeedbackResponse)
 async def store_feedback(feedback: FeedbackRequest):
     if not Config.ENABLE_USER_FEEDBACK: return {"status": "disabled"}
     try:

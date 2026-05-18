@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:7860"
+    volumes:
+      - ./backend/models:/app/models
+      - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
+    environment:
+      - SANCTUARY_HOST=0.0.0.0
+      - SANCTUARY_PORT=7860
+      - SANCTUARY_MODEL_PATH=/app/models/sanctuary_cbt_final.gguf
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: always

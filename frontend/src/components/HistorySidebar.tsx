@@ -116,7 +116,7 @@ export default function HistorySidebar({ isOpen, onClose, onSelectSession, onNew
         </div>
 
         <div className="p-6 border-t border-white/5 text-[10px] uppercase tracking-widest text-center text-text-muted font-bold">
-          Sanctuary Vault v3.2.7
+          Sanctuary Vault v3.2.8
         </div>
       </motion.aside>
     </>

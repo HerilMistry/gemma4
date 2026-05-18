@@ -253,7 +253,7 @@ export default function SanctuaryJournal() {
           </button>
           <div className="flex flex-col items-center">
             <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-accent-primary">Sanctuary</span>
-            <span className="text-xs text-text-muted font-medium">Industry Core v3.2.7</span>
+            <span className="text-xs text-text-muted font-medium">Industry Core v3.2.8</span>
           </div>
           <button 
             onClick={startNewChat}
