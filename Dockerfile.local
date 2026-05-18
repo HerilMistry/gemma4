@@ -1,0 +1,48 @@
+# Dockerfile.local
+FROM python:3.11-slim
+
+# Install system dependencies for C++ compilation, audio processing, and Node.js
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libsndfile1 \
+    ffmpeg \
+    git \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ---- Backend Setup ----
+COPY backend/requirements.txt backend/
+# Pre-install llama-cpp-python using pre-compiled CPU wheels
+RUN pip install --no-cache-dir llama-cpp-python==0.3.22 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Install remaining dependencies
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+COPY backend/ backend/
+RUN mkdir -p backend/models backend/data backend/uploads
+
+# ---- Frontend Setup ----
+COPY frontend/package.json frontend/package-lock.json* frontend/
+RUN cd frontend && npm ci
+
+COPY frontend/ frontend/
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=http://localhost:8000
+RUN cd frontend && npm run build
+
+# ---- Expose Ports ----
+# Next.js frontend port
+EXPOSE 3000
+# FastAPI backend port
+EXPOSE 8000
+
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+cd /app/backend && uvicorn server:app --host 0.0.0.0 --port 8000 &\n\
+cd /app/frontend && npm run start\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]

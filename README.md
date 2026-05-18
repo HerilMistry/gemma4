@@ -1,128 +1,177 @@
-# Sanctuary 3.2 — The Edge-Native Socratic CBT Core
+# 🌿 Sanctuary 3.0 — The Edge-Native Socratic CBT Core
 
 > **Instant, Private, Clinical-Grade CBT Reasoning — Powered by Gemma 4.**
 
-Sanctuary is a production-hardened, zero-telemetry mental health journaling platform that brings high-fidelity therapeutic support to the edge. Built for the privacy-conscious user, Sanctuary processes everything—from voice transcriptions to clinical reasoning—100% locally on your device. No API keys. No cloud calls. No data leaks.
+Sanctuary 3.0 is a production-hardened, zero-telemetry mental health journaling platform that brings high-fidelity therapeutic support to the edge. Built for the privacy-conscious user, Sanctuary processes everything—from voice transcriptions to clinical reasoning—100% locally on your device. No API keys. No cloud calls. No data leaks. 
+
+It marries advanced cognitive computing architectures with state-of-the-art multimodal biometrics and strict user-privacy protocols to deliver clinical-grade therapeutic interactions completely on the edge.
 
 ---
 
-## 🚀 Key Innovations
+## 🏗️ High-Level System Architecture
+
+Sanctuary operates on a strict **decentralized, local-first hybrid architecture**. The frontend client collects typing biometrics and voice streams, while the FastAPI edge backend performs lightweight local heuristics, runs voice activity detection, performs semantic vector database searches, and operates a quantized local LLM for CBT reasoning.
+
+```mermaid
+graph TD
+    %% Frontend Client
+    subgraph Client ["🖥️ Frontend Next.js Dashboard"]
+        UI["Main UI Page"]
+        DraftDB["IndexedDB (Draft Persistence)"]
+        AVisualizer["Audio Waveform"]
+    end
+
+    %% FastAPI Edge Backend
+    subgraph Backend ["⚡ FastAPI Edge Backend"]
+        Router["Cactus Edge Router"]
+        VAD["Silero VAD ONNX"]
+        Acoustic["Acoustic Extractor"]
+        Reframer["Cognitive Reframer"]
+        RAG["HyDE RAG Engine"]
+        Mem["Memory Engine"]
+        LLM["Modular LLM Engine"]
+        Secure["Secure Vault"]
+    end
+
+    %% Storage & Models
+    subgraph Storage ["💾 Local Storage & Local Models"]
+        SQL["SQLite Encrypted"]
+        Chroma["ChromaDB Vectors"]
+        GemmaG["Gemma-4 E4B GGUF Model"]
+    end
+
+    UI -->|Typing cadence / text| Router
+    UI -->|Voice recording| VAD
+    VAD -->|Extract features| Acoustic
+    Acoustic -->|Pitch & energy| Router
+    Router -->|Determines load/stress| LLM
+    RAG <-->|Semantic search & rerank| Chroma
+    Mem <-->|Query past summaries| Chroma
+    LLM <-->|Inference| GemmaG
+    LLM -->|Stream/Sync Response| UI
+```
+
+---
+
+## 🚀 Key Innovations & Features
 
 ### 1. Zero-Telemetry Architecture
-No API keys. No cloud processing. No data leaks. Sanctuary uses an optimized, fine-tuned **Gemma 4 E4B** model for local inference via `llama-cpp-python`, achieving a throughput of **5.05 tokens/second directly on CPU** with a lightweight **2.49 GB** model footprint.
+No API keys. No cloud processing. No data leaks. Sanctuary uses an optimized, fine-tuned **Gemma 4 E4B** model for local inference via `llama-cpp-python`, achieving high throughput directly on a CPU with a lightweight **2.49 GB** model footprint.
 
-### 2. Self-Healing GGUF Downloader
-No more manual weights configuration. We engineered an **automatic self-healing downloader** into the LLM core. If the model file is not detected locally or inside a Docker container on launch, the engine dynamically downloads the fine-tuned Gemma 4 weights in-memory from our public Hugging Face repository, guaranteeing a seamless, zero-config cold start.
+### 2. Dynamic Multimodal Biometric Routing
+The **Cactus Edge Router** analyzes real-time biometrics from the client device to ascertain the user's cognitive/stress state before passing context to the LLM:
+*   **Text Complexity:** Analyzes word count to gauge expressive detailing.
+*   **Typing Cadence:** Tracks physical keystroke intervals. High latency/hesitation flags cognitive load or anxiety.
+*   **Acoustic Biomarkers:** Vocal Pitch and Sound Energy are extracted via `librosa` to map to potential depressive states or anxiety.
 
-### 3. HyDE-RAG (Hypothetical Document Embeddings)
-Our retrieve-and-reason engine generates a hypothetical clinical response to construct intent before querying our **ChromaDB** clinical protocol vault. This yields state-of-the-art context grounding for complex emotional states, refined further by a local **Cross-Encoder Reranker**.
-
-### 4. Socratic CBT Reasoning Engine
+### 3. Socratic CBT Reasoning Engine & Reframing
 Unlike generic LLMs that provide plain advice, Sanctuary is strictly hardcoded for **Socratic Reframing**:
-*   **Identifying Cognitive Distortions**: Automatically tags distortions (e.g., *Catastrophizing*, *Emotional Reasoning*, *All-or-Nothing Thinking*).
-*   **Chain-of-Thought Filtering**: The model reasons about specific distortions internally before generating a Socratic response. An on-the-fly streaming token buffer intercepts and strips these metadata headers, delivering only the pristine therapeutic response to the user interface.
-*   **Protocol Adherence**: All reasoning is grounded in a local vault of clinical CBT protocols.
+*   **Identifying Cognitive Distortions:** The Reframer maps linguistic indicators to 6 main patterns of cognitive distortion (e.g., *Catastrophizing*, *Emotional Reasoning*, *All-or-Nothing Thinking*).
+*   **Chain-of-Thought Filtering:** The model reasons about specific distortions internally before generating a Socratic response. An on-the-fly streaming token buffer intercepts and strips these metadata headers, delivering only the pristine therapeutic response to the user interface.
+
+### 4. Semantic RAG & Double-Loop Memory
+*   **HyDE-RAG (Hypothetical Document Embeddings):** Our retrieve-and-reason engine generates a hypothetical clinical response to construct intent before querying our **ChromaDB** clinical protocol vault.
+*   **Cross-Encoder Reranking:** Raw candidates are scored and reordered via a lightweight local Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) to prioritize relevant protocols.
+*   **Long-Term Memories Integration:** Vectorizes clinical themes over time to inject into the LLM system instructions during subsequent sessions for longitudinal continuity.
 
 ### 5. Premium Glassmorphic UX
 A Spotify-inspired glassmorphic UI built with **Next.js 16** and **Tailwind CSS v4** featuring:
-*   **IndexedDB Persistence**: Offline draft caching with zero cloud dependency.
-*   **Audio Visualizer**: Real-time canvas-based frequency analysis for voice sessions.
-*   **Secure Vault**: AES-256 GCM encrypted journal storage with biometric jittering.
+*   **IndexedDB Persistence:** Offline draft caching with zero cloud dependency.
+*   **Audio Visualizer:** Real-time canvas-based frequency analysis for voice sessions.
+*   **Encrypted Vault:** Provides physical edge diagnostics like live log stream updates and security confirmations.
 
 ---
 
 ## 🛠️ Technical Stack
 
-| Layer | Technology |
-| :--- | :--- |
-| **ML Core** | Gemma 4 E4B (Unsloth rsLoRA fine-tune) via `llama-cpp-python` |
-| **Vector DB** | ChromaDB + `all-MiniLM-L6-v2` + Cross-Encoder Reranker |
-| **Audio** | Silero VAD (ONNX) + OpenAI Whisper (Local) |
-| **Frontend** | Next.js 16, Framer Motion, Lucide, ReactMarkdown |
-| **Backend** | FastAPI, AnyIO, Cryptography (AES-256 GCM) |
-| **Design** | Premium Glassmorphism, Tailwind CSS v4, Mesh Backgrounds |
+| Layer | Technology | Core Responsibility |
+| :--- | :--- | :--- |
+| **ML Core** | Gemma 4 E4B (Unsloth rsLoRA) | Edge LLM inference (quantized `q8_0` GGUF). |
+| **Vector DB** | ChromaDB + Cross-Encoder | Grounding query vector retrieval containing clinical protocols. |
+| **Audio** | Silero VAD (ONNX) + Whisper | Local speech detection and transcription. |
+| **Frontend** | Next.js 16, Framer Motion, Lucide | Fluid, high-fidelity React application with dynamic layouts. |
+| **Backend** | FastAPI, AnyIO, Cryptography | Coordinates REST/SSE endpoints; orchestrates streaming pipelines. |
+| **Storage** | SQLite + AES-256 GCM | Authenticated encryption for chat history and sessions. |
 
 ---
 
-## 📦 Submission Packager
+## 📖 How To Run Sanctuary (3 Ways)
 
-To prepare the clean, submission-ready ZIP file for Devpost or Kaggle, we have included an automated packaging utility in the workspace root. Run it to instantly generate **`sanctuary_edge_native.zip`** (excluding heavy python environments, model weights, local databases, and temporary caches):
+We provide three different ways to experience Sanctuary. Choose the one that works best for you!
 
-```powershell
-python package_project.py
+### Method 1: Try the Live Demo (Zero Setup)
+The quickest way to see Sanctuary in action is to use our live deployed web version. It offers the full UI experience completely hosted in the cloud.
+
+👉 **Access the Live Web App here:** [https://gemma4-sanctuary.onrender.com/](https://gemma4-sanctuary.onrender.com/)
+
+*(Note: The live version connects to a managed backend and doesn't require any local hardware.)*
+
+---
+
+### Method 2: All-in-One Local Docker Container (Recommended)
+If you want to run Sanctuary fully locally on your machine with one command, we've provided a specialized unified Dockerfile (`Dockerfile.local`). This spins up both the frontend and backend inside a single container without needing to configure Python or Node environments.
+
+1. **Build the image**:
+```bash
+docker build -t sanctuary-local -f Dockerfile.local .
 ```
 
+2. **Run the container**:
+```bash
+docker run -p 3000:3000 -p 8000:8000 sanctuary-local
+```
+
+3. **Access the Application**:
+- Open **http://localhost:3000** in your web browser.
+- The model weights will automatically download to the container on the first request if they are not already cached.
+
 ---
 
-## 🏁 Local Deployment Options
+### Method 3: Bare-Metal Setup (For Developers)
+For those who want to contribute, edit the code, or run processes directly on their machine, you can run the Next.js frontend and Python backend natively.
 
-### Prerequisites
+#### Prerequisites
 *   Python 3.11+
 *   Node.js 18+
-*   Docker (Optional, for containerized run)
+*   Git
 
-### Option A: Docker Compose (Recommended, One-Command)
-Thanks to the self-healing GGUF downloader, you do **not** need to manually download model weights! Simply run:
-
-```bash
-docker-compose up --build
-```
-*   **Vite React Client**: accessible at `http://localhost:3000`
-*   **FastAPI Local API Gateway**: accessible at `http://localhost:8000` (automatically mapped to container port 7860 for cloud compatibility).
-
----
-
-### Option B: Bare-Metal Setup
-
-#### 1. Download Model Weights (If not using automatic download)
-Download `sanctuary_cbt_final.gguf` (2.49 GB) and place it in `backend/models/`:
-```text
-backend/models/sanctuary_cbt_final.gguf
-```
-
-#### 2. Start the Backend Server
+#### Step 1: Start the Backend Server
+Open a terminal and set up the Python environment:
 ```bash
 cd backend
 python -m venv env
-.\env\Scripts\activate       # Windows
-# source env/bin/activate    # macOS/Linux
+# On Windows: .\env\Scripts\activate
+# On macOS/Linux: source env/bin/activate
 pip install -r requirements.txt
 python server.py
 ```
+*The backend API will run on `http://localhost:8000`.*
 
-#### 3. Start the Frontend Client
+#### Step 2: Start the Frontend Client
+Open a **new** terminal, leaving the backend running, and set up Node.js:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Access the client dashboard at: **http://localhost:3000**
+*The frontend client will run on `http://localhost:3000`.*
+
+#### Step 3: Access the App
+Open your browser and navigate to **http://localhost:3000**. The backend will automatically handle fetching the GGUF model if it is missing locally.
 
 ---
 
-## 🌐 Cloud Staging & Deployment (Tier 2 Strategy)
+## 📈 Federated Learning & Fine-Tuning Pipeline
 
-To allow judges to experience the live demo instantly in their browser with **zero installation**, we split the deployment into two free, high-performance hosting platforms:
-
-### 1. Backend: Hugging Face Spaces (Docker SDK)
-We provided an automated deployer script in the root directory that copies, git-initializes, and pushes the correct backend files to Hugging Face Spaces from your command line:
-
-```powershell
-# Bypasses browser drag-and-drop lags and folder upload limits
-python deploy_to_hf.py
-```
-*   Select the **Docker SDK** and the **Blank** template on Hugging Face (CPU Basic 16GB tier).
-*   Our custom `Dockerfile` automatically exposes port **`7860`** to comply with HF regulations.
-
-### 2. Frontend: Vercel Static Hosting
-Connect your repository to Vercel, set `/frontend` as the root directory, and add the crucial API environment variable:
-*   `NEXT_PUBLIC_API_URL` = `https://[your-username]-[space-name].hf.space`
+To achieve optimal CBT reasoning performance on an edge device, Sanctuary features a customized **Unsloth Fine-Tuning and compiler script** and a **Federated Learning** aggregation system. The model uses Rank-Stabilized LoRA applied to all attention and projection layers, trained on a strict dataset diet of therapist responses. A Federated Averaging algorithm (`FedAvg`) merges LoRA adapter weights from multiple distinct users, preserving strict client data separation while allowing the model to adapt and improve anonymously.
 
 ---
 
-## 🔒 Privacy Commitment
-Sanctuary is built on the principle that **mental health data is sacred**. Not a single byte of your chat history, voice recordings, or biometrics will ever leave your machine. All data is encrypted at rest with AES-256 GCM.
+## 🔒 Absolute Privacy & Local Data Compliance
+
+Sanctuary is built on the principle that **mental health data is sacred**. Not a single byte of your chat history, voice recordings, or biometrics will ever leave your machine when running locally.
+- **Biometric Privacy:** Voice VAD and pitch analysis are processed locally; transcription operates entirely on-device (via local Whisper).
+- **Data Compliance:** SQLite data files and model cache instances are shielded behind military-grade AES-256 GCM authenticated encryption keys stored locally. No cloud telemetry or diagnostics leave this device.
 
 ---
-
 **Sanctuary — Because your mind deserves a private place.**
