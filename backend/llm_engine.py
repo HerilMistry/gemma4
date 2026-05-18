@@ -180,8 +180,8 @@ class LlamaCppProvider:
             n_batch=512,
             n_ubatch=256,
             n_gpu_layers=Config.N_GPU_LAYERS,
-            offload_kqv=True,
-            flash_attn=True,
+            offload_kqv=(Config.N_GPU_LAYERS > 0),
+            flash_attn=(Config.N_GPU_LAYERS > 0),
             verbose=False
         )
         logger.info("Sanctuary Core loaded successfully.")
@@ -251,12 +251,18 @@ class LlamaCppProvider:
                         if content:
                             yield content
                         prefix_skipped = True
-                    elif len(buffer) > 150:
-                        # Fallback if structural header is absent, flush buffer
+                    elif len(buffer) >= 20:
+                        # Confidently flush if prefix is absent
                         yield buffer
                         prefix_skipped = True
                 else:
                     yield token
+
+        # Flush any remaining buffer if it was never flushed (short response case)
+        if not prefix_skipped and buffer:
+            clean_buf = _extract_sanctuary_response(buffer)
+            if clean_buf:
+                yield clean_buf
 
         final = "".join(collected).strip()
         if final:

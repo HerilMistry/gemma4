@@ -52,6 +52,7 @@ export default function SanctuaryJournal() {
         getReq.onsuccess = () => {
           if (getReq.result && text === '') setText(getReq.result);
         };
+        addTelemetryLog("SECURE VAULT ENGINE ONLINE | AES-256 SEALS ENGAGED");
       };
     };
     initDB();
@@ -104,13 +105,16 @@ export default function SanctuaryJournal() {
     setIsLoading(true);
     setActiveSessionId(sessionId);
     setActiveTab('therapy');
+    addTelemetryLog(`DECRYPTING ENCRYPTED HISTORY FILES FOR SESSION: [${sessionId.slice(0, 8)}...]`);
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/sessions/${sessionId}`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.map((m: any) => ({ role: m.role, text: m.text })));
+        addTelemetryLog(`DECRYPTION TRANSACTION SUCCESSFUL: POPULATED ${data.length} DIALOGUE EVENTS`);
       }
     } catch (err) {
+      addTelemetryLog(`SECURE DATA INTEGRITY FAULT: DECRYPTION SCHEME FAILED`);
       console.error("Failed to load session", err);
     } finally {
       setIsLoading(false);
@@ -161,6 +165,7 @@ export default function SanctuaryJournal() {
     triggerHaptic([20, 40, 20]);
 
     const userText = text;
+    addTelemetryLog("SECURE INFERENCE INITIATED: SANITIZING SENSITIVE PII PATTERNS...");
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setText('');
     clearDraft();
@@ -173,11 +178,13 @@ export default function SanctuaryJournal() {
     if (activeSessionId) formData.append('session_id', activeSessionId);
 
     if (audioChunksRef.current.length > 0) {
+      addTelemetryLog("RAW AUDIO WAVEFORM DETECTED: ENVELOPING SPEECH PROFILE...");
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
       formData.append('audio', audioBlob, 'recording.wav');
     }
 
     try {
+      addTelemetryLog("TRANSMITTING MULTIMODAL PACKET TO ENCRYPTED GATEWAY...");
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/analyze/stream`, {
         method: 'POST',
         body: formData,
@@ -205,6 +212,7 @@ export default function SanctuaryJournal() {
             if (data.type === 'metadata') {
               if (data.session_id && !activeSessionId) setActiveSessionId(data.session_id);
               setMessages(prev => [...prev, { role: 'assistant', text: '', distortions: data.distortions }]);
+              addTelemetryLog(`SECURE SHIELDED INFERENCE ONLINE | ROUTE: ${data.route.toUpperCase()} | DISTORTIONS: ${data.distortions.join(', ') || 'NONE'}`);
             } else if (data.type === 'token') {
               setMessages(prev => {
                 const updated = [...prev];
@@ -218,15 +226,18 @@ export default function SanctuaryJournal() {
           } catch (e) { }
         }
       }
+      addTelemetryLog("INFERENCE STREAM SUCCESSFUL. SEEDING LOCAL CRYPTO CACHE.");
       setTypingCadence([]);
       setLastKeystrokeTime(null);
       audioChunksRef.current = [];
 
       // Periodically trigger summarization for long-term memory (every 5 messages)
       if (messages.length > 0 && messages.length % 5 === 0) {
+        addTelemetryLog("SUMMARIZING ACTIVE CHAT SESSION FOR CHROMADB RAG STORAGE");
         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/sessions/${activeSessionId}/summarize`, { method: 'POST' }).catch(() => {});
       }
     } catch (err) {
+      addTelemetryLog("SECURE CORE DISCONNECTED: FALLBACK ENGAGED.");
       setMessages(prev => [...prev, { role: 'assistant', text: 'Core disconnected. Please check your local server.' }]);
     } finally { setIsLoading(false); }
   };

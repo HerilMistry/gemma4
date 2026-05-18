@@ -30,13 +30,18 @@ class PIISanitizer:
         
         # Simple Name Heuristic: Mask common introductions
         # Matches "My name is John Doe", "I am Jane", etc.
+        # Restrict case-insensitivity to intro verbs, keeping the matched Name strictly capitalized
         intro_patterns = [
-            r'(?i)(?:my name is|i am|this is|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+            r'(?i:(?:my name is|i am|this is|call me))\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
         ]
+        blacklist = {"feeling", "stressed", "overwhelmed", "sad", "anxious", "depressed", "afraid", "scared", "worried", "happy", "angry", "tired", "down", "low", "going", "doing", "fine", "okay", "here", "there"}
         for pattern in intro_patterns:
             def _mask_name(match):
                 full_match = match.group(0)
                 name_part = match.group(1)
+                # Skip masking if it is a common feeling or verb
+                if name_part.lower() in blacklist:
+                    return full_match
                 intro = full_match.split(name_part)[0]
                 return f"{intro}[NAME]"
             sanitized = re.sub(pattern, _mask_name, sanitized)

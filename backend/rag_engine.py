@@ -98,7 +98,11 @@ def get_collection():
 
     logger.info("Initializing ChromaDB at %s ...", Config.CHROMA_DB_PATH)
     ef = get_embedding_function()
-    client = chromadb.PersistentClient(path=Config.CHROMA_DB_PATH)
+    from chromadb.config import Settings
+    client = chromadb.PersistentClient(
+        path=Config.CHROMA_DB_PATH,
+        settings=Settings(anonymized_telemetry=False)
+    )
     _collection = client.get_or_create_collection(
         name="clinical_protocols",
         embedding_function=ef,

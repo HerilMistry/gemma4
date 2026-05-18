@@ -83,7 +83,11 @@ class SecureVault:
             try:
                 plaintext = self._aesgcm.decrypt(nonce, ciphertext, None)
                 data = json.loads(plaintext.decode("utf-8"))
-                decrypted.append({"role": "user" if "original_text" in data else "assistant", "text": data.get("original_text") or data.get("response", ""), "timestamp": timestamp, "data": data})
+                if "original_text" in data and "response" in data:
+                    decrypted.append({"role": "user", "text": data["original_text"], "timestamp": timestamp, "data": data})
+                    decrypted.append({"role": "assistant", "text": data["response"], "timestamp": timestamp, "data": data})
+                else:
+                    decrypted.append({"role": "user" if "original_text" in data else "assistant", "text": data.get("original_text") or data.get("response", ""), "timestamp": timestamp, "data": data})
             except: pass
         return decrypted
 

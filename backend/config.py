@@ -23,7 +23,28 @@ class Config:
         os.getenv("SANCTUARY_MODEL_PATH", str(BASE_DIR / "models" / "sanctuary_cbt_final.gguf"))
     )
     N_CTX = int(os.getenv("SANCTUARY_N_CTX", "2048"))
-    N_GPU_LAYERS = int(os.getenv("SANCTUARY_N_GPU_LAYERS", "0"))  # 0 = CPU only
+    @staticmethod
+    def get_optimal_gpu_layers() -> int:
+        """
+        Auto-detect if a GPU is available on the hosting device.
+        If an NVIDIA GPU is found, returns 33 to offload all model layers to VRAM.
+        Otherwise, defaults to 0 (CPU-only) to avoid lockups.
+        """
+        import os
+        import shutil
+        if "SANCTUARY_N_GPU_LAYERS" in os.environ:
+            return int(os.environ["SANCTUARY_N_GPU_LAYERS"])
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return 33
+        except ImportError:
+            pass
+        if shutil.which("nvidia-smi") is not None:
+            return 33
+        return 0
+
+    N_GPU_LAYERS = int(os.getenv("SANCTUARY_N_GPU_LAYERS", str(get_optimal_gpu_layers.__func__())))
     MAX_TOKENS = int(os.getenv("SANCTUARY_MAX_TOKENS", "512"))
 
     @staticmethod
@@ -34,6 +55,10 @@ class Config:
         to prevent system lockup and UI lag.
         """
         import psutil
+        import os
+        # Container check: cap threads to 4 inside containers to prevent context-switching thrashing
+        if os.path.exists("/.dockerenv") or os.environ.get("SPACES_ZERO_GPU") is not None:
+            return 4
         try:
             # Get physical cores (excluding logical hyperthreads for better performance)
             physical_cores = psutil.cpu_count(logical=False) or os.cpu_count() or 4

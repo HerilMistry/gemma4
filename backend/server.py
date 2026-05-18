@@ -190,8 +190,14 @@ async def analyze_stream(
     text = PIISanitizer.sanitize(text)
     typing_features = PIISanitizer.sanitize_biometrics(typing_features)
 
-    if not text.strip(): return StreamingResponse(_single_token_gen(EMPTY_INPUT_RESPONSE), media_type="text/event-stream")
-    if is_crisis(text): return StreamingResponse(_single_token_gen(CRISIS_RESPONSE, route="crisis"), media_type="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+    }
+
+    if not text.strip(): return StreamingResponse(_single_token_gen(EMPTY_INPUT_RESPONSE), media_type="text/event-stream", headers=headers)
+    if is_crisis(text): return StreamingResponse(_single_token_gen(CRISIS_RESPONSE, route="crisis"), media_type="text/event-stream", headers=headers)
 
     orchestrator = get_inference_orchestrator()
     async with inference_semaphore:
@@ -228,7 +234,7 @@ async def analyze_stream(
             yield "data: [DONE]\n\n"
             gc.collect()
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 @app.post("/sessions/{session_id}/summarize")
 async def trigger_summarize(session_id: str):

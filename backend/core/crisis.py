@@ -50,7 +50,7 @@ def is_severe(text: str, typing_features: dict, stress_threshold: int = 400) -> 
     
     # Check typing cadence if available
     avg_interval = typing_features.get("avg_interval", 1000)
-    high_stress_typing = avg_interval < stress_threshold
+    high_stress_typing = 0 < avg_interval < stress_threshold
     
     if high_stress_typing:
         logger.info("High stress typing detected: %sms", avg_interval)
