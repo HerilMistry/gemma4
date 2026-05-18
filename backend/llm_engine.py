@@ -82,7 +82,6 @@ class LlamaCppProvider:
             # Default to public/private weights from user's huggingface repository
             default_url = "https://huggingface.co/HerilMistry/gemma4/resolve/main/sanctuary_cbt_final.gguf"
             url = os.getenv("SANCTUARY_MODEL_URL", default_url)
-            
             # Extract HF repository name and filename if downloading from huggingface.co
             hf_repo = None
             hf_filename = None
