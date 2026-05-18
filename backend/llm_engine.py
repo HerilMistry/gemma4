@@ -75,21 +75,102 @@ class LlamaCppProvider:
 
         if not self._model_path.exists():
             import os
+            import shutil
             logger.info("GGUF model not found locally at %s. Initiating automatic self-healing download...", self._model_path)
             self._model_path.parent.mkdir(parents=True, exist_ok=True)
-            # Default to public weights from user's huggingface repository
+            
+            # Default to public/private weights from user's huggingface repository
             default_url = "https://huggingface.co/HerilMistry/gemma4/resolve/main/sanctuary_cbt_final.gguf"
             url = os.getenv("SANCTUARY_MODEL_URL", default_url)
-            try:
-                import urllib.request
-                logger.info("Downloading quantized Gemma 4 model from %s...", url)
-                urllib.request.urlretrieve(url, str(self._model_path))
-                logger.info("Download completed successfully!")
-            except Exception as e:
-                raise FileNotFoundError(
-                    f"GGUF model not found at {self._model_path} and automatic download from {url} failed: {e}. "
-                    "Please place sanctuary_cbt_final.gguf manually in the models/ directory."
-                )
+            
+            # Extract HF repository name and filename if downloading from huggingface.co
+            hf_repo = None
+            hf_filename = None
+            if "huggingface.co" in url and "/resolve/" in url:
+                try:
+                    parts = url.split("huggingface.co/", 1)[1].split("/")
+                    if len(parts) >= 5 and parts[2] == "resolve":
+                        hf_repo = f"{parts[0]}/{parts[1]}"
+                        hf_filename = "/".join(parts[4:])
+                except Exception as ex:
+                    logger.warning("Could not parse Hugging Face repo structure from URL: %s", ex)
+
+            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+            downloaded = False
+
+            # Option A: Try standard huggingface_hub API if available
+            if hf_repo and hf_filename:
+                try:
+                    import huggingface_hub
+                    logger.info("Attempting secure download via huggingface_hub for repo '%s', file '%s'...", hf_repo, hf_filename)
+                    downloaded_path = huggingface_hub.hf_hub_download(
+                        repo_id=hf_repo,
+                        filename=hf_filename,
+                        token=hf_token,
+                        local_dir=str(self._model_path.parent),
+                        local_dir_use_symlinks=False
+                    )
+                    downloaded_file = Path(downloaded_path)
+                    if downloaded_file.resolve() != self._model_path.resolve():
+                        shutil.copy2(downloaded_path, str(self._model_path))
+                    logger.info("Model download via huggingface_hub completed successfully!")
+                    downloaded = True
+                except ImportError:
+                    logger.info("huggingface_hub library not found. Falling back to HTTP request...")
+                except Exception as he:
+                    logger.warning("huggingface_hub download attempt failed: %s. Falling back to HTTP request...", he)
+
+            # Option B: Stream download using urllib with authorization headers and chunked writing
+            if not downloaded:
+                try:
+                    import urllib.request
+                    logger.info("Downloading quantized Gemma 4 model from %s...", url)
+                    
+                    headers = {
+                        "User-Agent": "SanctuaryDownloader/3.2"
+                    }
+                    if hf_token:
+                        headers["Authorization"] = f"Bearer {hf_token}"
+                        logger.info("Authenticated download request initiated using HF_TOKEN.")
+                    
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req) as response:
+                        total_size = int(response.info().get('Content-Length', 0))
+                        chunk_size = 4 * 1024 * 1024  # 4MB chunks for fast I/O
+                        bytes_downloaded = 0
+                        
+                        # Write atomically to a temporary file first
+                        temp_path = self._model_path.with_suffix(".tmp")
+                        logger.info("Downloading to temporary path: %s", temp_path.name)
+                        
+                        last_reported = 0
+                        with open(temp_path, "wb") as f:
+                            while True:
+                                chunk = response.read(chunk_size)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                bytes_downloaded += len(chunk)
+                                
+                                # Limit progress logging to prevent spam
+                                if total_size > 0:
+                                    percent = (bytes_downloaded / total_size) * 100
+                                    if percent - last_reported >= 5.0 or bytes_downloaded == total_size:
+                                        logger.info("Download progress: %.1f%% (%d/%d MB)", percent, bytes_downloaded // (1024 * 1024), total_size // (1024 * 1024))
+                                        last_reported = percent
+                                else:
+                                    if bytes_downloaded - last_reported >= 50 * 1024 * 1024:
+                                        logger.info("Downloaded %d MB", bytes_downloaded // (1024 * 1024))
+                                        last_reported = bytes_downloaded
+                                        
+                        # Move to target model path atomically
+                        temp_path.rename(self._model_path)
+                    logger.info("Download completed successfully!")
+                except Exception as e:
+                    raise FileNotFoundError(
+                        f"GGUF model not found at {self._model_path} and automatic download from {url} failed: {e}. "
+                        "Please verify your HF_TOKEN is correctly configured in your environment, or place sanctuary_cbt_final.gguf manually in the models/ directory."
+                    )
 
         logger.info("Loading Sanctuary Core (%s)...", self._model_path.name)
         

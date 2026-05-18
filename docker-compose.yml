@@ -15,6 +15,7 @@ services:
       - SANCTUARY_HOST=0.0.0.0
       - SANCTUARY_PORT=7860
       - SANCTUARY_MODEL_PATH=/app/models/sanctuary_cbt_final.gguf
+      - HF_TOKEN=${HF_TOKEN}
     restart: always
 
   frontend:
