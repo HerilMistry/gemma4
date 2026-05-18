@@ -44,7 +44,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Spotify-style blurred background bleed */
+/* Calming auroral ambient background bleed */
 .mesh-bg {
   position: fixed;
   top: 0;
@@ -52,34 +52,38 @@ body {
   width: 100vw;
   height: 100vh;
   z-index: -1;
-  background-color: #000000;
+  background-color: #030303;
   background-image: 
-    radial-gradient(circle at 15% 50%, rgba(29, 185, 84, 0.12) 0%, transparent 45%),
-    radial-gradient(circle at 85% 30%, rgba(30, 215, 96, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 50% 100%, rgba(20, 20, 20, 1) 0%, transparent 60%);
-  animation: bg-shift 20s ease-in-out infinite alternate;
+    radial-gradient(circle at 10% 20%, rgba(29, 185, 84, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 90% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 50% 85%, rgba(20, 184, 166, 0.08) 0%, transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.07) 0%, transparent 45%);
+  animation: bg-shift 25s ease-in-out infinite alternate;
 }
 
 @keyframes bg-shift {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.1); }
+  0% { transform: scale(1) translate(0px, 0px); }
+  50% { transform: scale(1.05) translate(10px, -5px); }
+  100% { transform: scale(1.1) translate(-5px, 10px); }
 }
 
-/* Enhanced Glass Panel */
+/* Enhanced Hyper-Glassy Panel */
 .glass-panel {
-  background: rgba(18, 18, 18, 0.65);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 10, 10, 0.6);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.1), 
-    0 2px 4px -1px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    0 12px 40px -10px rgba(0, 0, 0, 0.6), 
+    0 4px 12px -5px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 .premium-card {
-  @apply bg-brand-800/40 hover:bg-brand-800/60 transition-all duration-500 rounded-2xl border border-white/5 hover:border-white/10;
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+  @apply bg-brand-800/25 hover:bg-brand-800/65 transition-all duration-500 rounded-3xl border border-white/5 hover:border-white/10;
+  box-shadow: 
+    0 10px 30px -10px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .glow-green {

@@ -26,13 +26,14 @@ export default function SanctuaryJournal() {
   const [telemetryLogs, setTelemetryLogs] = useState<string[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
   
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-
+  
   // --- Premium Feature: IndexedDB Persistence for Drafts ---
   useEffect(() => {
     const initDB = async () => {
@@ -267,7 +268,12 @@ export default function SanctuaryJournal() {
           <AnimatePresence mode="wait">
             {activeTab === 'home' && (
               <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <HomeTab onStartSession={() => setActiveTab('therapy')} triggerHaptic={triggerHaptic} />
+                <HomeTab 
+                  onStartSession={() => setActiveTab('therapy')} 
+                  triggerHaptic={triggerHaptic}
+                  selectedMood={selectedMood}
+                  setSelectedMood={setSelectedMood}
+                />
               </motion.div>
             )}
             {activeTab === 'therapy' && (
@@ -283,6 +289,7 @@ export default function SanctuaryJournal() {
                   onSubmit={handleSubmit}
                   onKeyDown={handleKeyDown}
                   analyser={analyserRef.current}
+                  selectedMood={selectedMood}
                 />
               </motion.div>
             )}
