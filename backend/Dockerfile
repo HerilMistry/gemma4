@@ -12,6 +12,9 @@ WORKDIR /app
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
+# Pre-install llama-cpp-python using pre-compiled CPU wheels to prevent C++ GCC compilation memory crashes
+RUN pip install --no-cache-dir llama-cpp-python==0.3.22 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend codebase
