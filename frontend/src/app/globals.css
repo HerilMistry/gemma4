@@ -15,8 +15,8 @@
   --color-text-secondary: #A7A7A7;
   --color-text-muted: #727272;
   
-  --font-sans: 'Inter', 'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: var(--font-geist-sans), 'Inter', 'Outfit', system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), 'JetBrains Mono', 'Fira Code', monospace;
 
   --radius-xl: 1.5rem;
   --radius-2xl: 2rem;

@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:7860"
+      - "8001:7860"
     volumes:
       - ./backend/models:/app/models
       - ./backend/data:/app/data
@@ -16,16 +16,24 @@ services:
       - SANCTUARY_PORT=7860
       - SANCTUARY_MODEL_PATH=/app/models/sanctuary_cbt_final.gguf
       - HF_TOKEN=${HF_TOKEN}
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s   # model download can take a while on slower connections
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Browser calls backend via host machine port 8001
+        NEXT_PUBLIC_API_URL: http://localhost:8001
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
-      - backend
-    restart: always
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

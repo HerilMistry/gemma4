@@ -37,15 +37,21 @@ inference_semaphore = anyio.Semaphore(1)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from vad import SileroVAD
-    from llm_engine import get_inference_orchestrator
-    from rag_engine import get_collection
-    try: SileroVAD()._init_session()
-    except: pass
-    try: get_inference_orchestrator()._ensure_model_loaded()
-    except: pass
-    try: get_collection()
-    except: pass
+    try:
+        from vad import SileroVAD
+        SileroVAD()._init_session()
+    except ImportError: pass
+    except Exception: pass
+    
+    try: 
+        from llm_engine import get_inference_orchestrator
+        get_inference_orchestrator()._ensure_model_loaded()
+    except Exception: pass
+    
+    try: 
+        from rag_engine import get_collection
+        get_collection()
+    except Exception: pass
     yield
 
 app = FastAPI(title="Sanctuary", version="3.2.8", lifespan=lifespan)

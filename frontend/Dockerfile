@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -12,8 +12,10 @@ RUN npm ci
 COPY . .
 
 # Set environment variables for production build
+# NEXT_PUBLIC_* vars must be set at BUILD time
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # Build the Next.js app
 RUN npm run build
@@ -21,5 +23,5 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
-# Start server
-CMD ["npm", "run", "start"]
+# Start server using the standalone build
+CMD ["node", ".next/standalone/server.js"]

@@ -1,5 +1,4 @@
-# Sanctuary 3.0 — Pinned Dependencies
-# Install: pip install -r requirements.txt
+# Sanctuary 3.0 — Minimal Docker Dependencies
 
 # --- API Server ---
 fastapi==0.115.0
@@ -7,28 +6,26 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.18
 Jinja2==3.1.4
 
-# --- LLM Engine (in-process GGUF inference) ---
-llama-cpp-python==0.3.22
+# --- LLM Engine ---
+# Installed separately in Dockerfile via pre-built CPU wheel
+# llama-cpp-python==0.3.22
 
-# --- RAG Engine (real vector search) ---
+# --- RAG Engine ---
 chromadb==0.6.3
 sentence-transformers==3.4.1
 
 # --- Security ---
 cryptography==44.0.0
 
-# --- Audio Processing ---
-librosa==0.10.2
-soundfile==0.12.1
-openai-whisper==20250625
-onnxruntime==1.20.0
-onnx==1.17.0
-
-# --- Multilingual & Language Detection ---
+# --- Multilingual ---
 langdetect==1.0.9
 
+# --- Database / Utilities ---
 sqlalchemy==2.0.34
 numpy<2.0
 pandas==2.2.3
 psutil==6.1.1
 alembic==1.13.2
+
+# --- Model download (self-healing) ---
+huggingface_hub==0.23.4

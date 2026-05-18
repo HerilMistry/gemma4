@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Clock, User, BrainCircuit, Frown, CloudRain, Meh, Smile, Sparkles, ArrowRight } from 'lucide-react';
 
@@ -11,6 +12,11 @@ interface HomeTabProps {
 }
 
 export default function HomeTab({ onStartSession, triggerHaptic, selectedMood, setSelectedMood }: HomeTabProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   const MOODS = [
     { 
@@ -67,10 +73,10 @@ export default function HomeTab({ onStartSession, triggerHaptic, selectedMood, s
       <div className="flex justify-between items-center mb-8">
         <div>
           <p className="text-[10px] font-bold text-text-muted uppercase tracking-[0.25em] mb-1.5 font-mono">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            {mounted ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '\u00A0'}
           </p>
           <h1 className="text-4xl font-bold tracking-tight text-white leading-tight">
-            {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}
+            {mounted ? (new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening') : 'Welcome'}
           </h1>
         </div>
         <motion.div 
